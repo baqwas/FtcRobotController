@@ -9,26 +9,19 @@ import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 
 public class OdometryKalman {
 
-    private DcMotorEx leftEncoder, rightEncoder, strafeEncoder;
-    private BNO055IMU imu;
+    private final DcMotorEx leftEncoder;
+    private final DcMotorEx rightEncoder;
+    private final DcMotorEx strafeEncoder;
+    private final BNO055IMU imu;
 
-    private double x, y, theta;
     private int lastLeftPos, lastRightPos, lastStrafePos;
 
-    // Odometry constants (TUNE THESE FOR YOUR ROBOT)
-    private final double TICKS_PER_INCH = 120; // Calibrate
-    private final double TRACK_WIDTH = 15;     // Distance between left and right wheels in inches
-    private final double STRAFE_CORRECTION = 1.0; // Correction factor for strafe wheel (tune to fix arc)
-
-    // Kalman Filter parameters (TUNE THESE)
-    // Process noise: how much we trust our model (odometry)
-    private final double Q_HEADING = 0.05; // High value for noisy odometry, low for accurate odometry
+    /*
+        The following variables are no longer used in the code
     private final double Q_POSITION = 0.1;
 
-    // Measurement noise: how much we trust our sensor (IMU)
-    private final double R_HEADING = 0.005; // Low value for accurate IMU, high for noisy IMU
     private final double R_POSITION = 100000; // High value since we have no position measurement sensor
-
+     */
     // Filter state variables
     private double filteredX, filteredY, filteredTheta;
     private double P_theta; // Variance of our heading estimate
@@ -45,9 +38,9 @@ public class OdometryKalman {
         imu.initialize(imuParameters);
 
         // Initialize state
-        this.x = 0;
-        this.y = 0;
-        this.theta = 0;
+        double x = 0;
+        double y = 0;
+        double theta = 0;
 
         // Initialize filtered state and variance
         this.filteredX = x;
@@ -74,18 +67,25 @@ public class OdometryKalman {
         lastRightPos = currentRightPos;
         lastStrafePos = currentStrafePos;
 
+        // Odometry constants (TUNE THESE FOR YOUR ROBOT)
+        // Calibrate
+        double TICKS_PER_INCH = 120;
         double deltaLeftInches = deltaLeft / TICKS_PER_INCH;
         double deltaRightInches = deltaRight / TICKS_PER_INCH;
         double deltaStrafeInches = deltaStrafe / TICKS_PER_INCH;
 
         // --- PREDICTION STEP (using odometry) ---
         // Predict new heading
+        // Distance between left and right wheels in inches
+        double TRACK_WIDTH = 15;
         double deltaTheta = (deltaRightInches - deltaLeftInches) / TRACK_WIDTH;
         double predictedTheta = filteredTheta + deltaTheta;
 
         // Predict new position based on the predicted heading
         double headingChange = (filteredTheta + predictedTheta) / 2.0;
         double deltaY = (deltaRightInches + deltaLeftInches) / 2.0;
+        // Correction factor for strafe wheel (tune to fix arc)
+        double STRAFE_CORRECTION = 1.0;
         double deltaX = deltaStrafeInches * STRAFE_CORRECTION;
 
         double deltaXGlobal = deltaY * Math.sin(headingChange) + deltaX * Math.cos(headingChange);
@@ -95,15 +95,22 @@ public class OdometryKalman {
         double predictedY = filteredY + deltaYGlobal;
 
         // Update covariance (our uncertainty grows)
-        P_theta += Q_HEADING;
+        // Kalman Filter parameters (TUNE THESE)
+        // Process noise: how much we trust our model (odometry)
+        // High value for noisy odometry, low for accurate odometry
+        double q_HEADING = 0.05;
+        P_theta += q_HEADING;
 
         // --- UPDATE STEP (using IMU measurement) ---
-        // Get the IMU's measured heading
+        // Get the measured heading of the IMU
         Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.RADIANS);
         double measuredTheta = angles.firstAngle;
 
         // Calculate Kalman Gain (K)
-        double K = P_theta / (P_theta + R_HEADING);
+        // Measurement noise: how much we trust our sensor (IMU)
+        // Low value for accurate IMU, high for noisy IMU
+        double r_HEADING = 0.005;
+        double K = P_theta / (P_theta + r_HEADING);
 
         // Correct the predicted heading
         filteredTheta = predictedTheta + K * (measuredTheta - predictedTheta);

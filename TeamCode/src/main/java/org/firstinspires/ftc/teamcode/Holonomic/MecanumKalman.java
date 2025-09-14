@@ -12,17 +12,12 @@ public class MecanumKalman extends LinearOpMode {
     private MecanumDrive mecanumDrive;
     private OdometryKalman odometry;
 
-    // Odometry-specific hardware
-    private DcMotorEx odometryLeft;
-    private DcMotorEx odometryRight;
-    private DcMotorEx odometryStrafe;
-    private BNO055IMU imu;
-
+    /*
     // Movement constants (tune these for your robot)
-    private final double DRIVE_SPEED = 0.5;
-    private final double TURN_SPEED = 0.5;
-    private final double POSITION_TOLERANCE = 1.0; // in inches
-    private final double HEADING_TOLERANCE = 1.0; // in degrees
+    // The following private fields are never used owing to changes in code
+    // private final double DRIVE_SPEED = 0.5;
+    // private final double TURN_SPEED = 0.5;
+     */
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -35,10 +30,11 @@ public class MecanumKalman extends LinearOpMode {
         );
 
         // Odometry hardware initialization (replace with your actual hardware names)
-        odometryLeft = hardwareMap.get(DcMotorEx.class, "odometryLeft");
-        odometryRight = hardwareMap.get(DcMotorEx.class, "odometryRight");
-        odometryStrafe = hardwareMap.get(DcMotorEx.class, "odometryStrafe");
-        imu = hardwareMap.get(BNO055IMU.class, "imu");
+        // Odometry-specific hardware
+        DcMotorEx odometryLeft = hardwareMap.get(DcMotorEx.class, "odometryLeft");
+        DcMotorEx odometryRight = hardwareMap.get(DcMotorEx.class, "odometryRight");
+        DcMotorEx odometryStrafe = hardwareMap.get(DcMotorEx.class, "odometryStrafe");
+        BNO055IMU imu = hardwareMap.get(BNO055IMU.class, "imu");
 
         // Set odometry motor modes
         odometryLeft.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
@@ -57,15 +53,17 @@ public class MecanumKalman extends LinearOpMode {
         waitForStart();
 
         if (opModeIsActive()) {
-            // Example path:
-            // 1. Drive forward 24 inches
-            goToPosition(0, 24, 0);
+            // Define the path using the new Waypoint class with a heading
+            Waypoint[] path = {
+                    new Waypoint(0, 24, 0),
+                    new Waypoint(24, 24, 90),
+                    new Waypoint(24, 48, 0)
+            };
 
-            // 2. Strafe right 24 inches
-            goToPosition(24, 24, 0);
-
-            // 3. Turn 90 degrees
-            goToPosition(24, 24, 90);
+            // Iterate through each waypoint and drive to it
+            for (Waypoint waypoint : path) {
+                goToPosition(waypoint.x, waypoint.y, waypoint.heading);
+            }
 
             telemetry.addData("Status", "Path complete! OpMode finished.");
             telemetry.update();
@@ -77,6 +75,10 @@ public class MecanumKalman extends LinearOpMode {
      * This is a simplified implementation for demonstration.
      */
     private void goToPosition(double targetX, double targetY, double targetHeading) {
+        // in inches
+        double POSITION_TOLERANCE = 1.0;
+        // in degrees
+        double HEADING_TOLERANCE = 1.0;
         while (opModeIsActive() && (
                 Math.hypot(targetX - odometry.getX(), targetY - odometry.getY()) > POSITION_TOLERANCE ||
                         Math.abs(targetHeading - odometry.getHeading()) > HEADING_TOLERANCE
