@@ -27,14 +27,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package org.firstinspires.ftc.teamcode.Robot.AutoDrive;
+package org.firstinspires.ftc.teamcode.retired.Auto;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -63,31 +63,20 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
  *  There are other ways to perform encoder based moves, but this method is probably the simplest.
  *  This code uses the RUN_TO_POSITION mode to enable the Motor controllers to generate the run profile
  *
- *  The equation to reduce speed of motor travel to a preset linear distance for travel under proportional control is:
- *
- * speed = Kp * (target_distance - current_distance)
- *
- * Where:
- *
- *     Kp is the proportional gain constant
- *     target_distance is the desired distance to travel
- *     current_distance is the current distance traveled
- *
- * The proportional gain constant, Kp, determines how sensitive the motor speed is to the difference between the target distance and the current distance. A higher Kp value will cause the motor speed to change more quickly in response to a difference in distance, while a lower Kp value will cause the motor speed to change more slowly.
- *
  *  Adapted from SDK 8.2 example, RobotAutoDriveByEncoderLinear
  *  2023-08-01 0.1 armw initial foray using prior season's Mecanum drivetrain parameters
  */
 
-@Autonomous(name="Auto: Drive By Encoder with P", group="Robot")
+@Autonomous(name="Auto: Drive By Encoder", group="Robot")
 //@Disabled
-public class ByEncoder_Linear_P extends LinearOpMode {
+public class ByEncoder_Linear extends LinearOpMode {
 
     // Declare OpMode members
-    Datalog datalog = new Datalog("ByEncoder_Linear_P_01");
+    Datalog datalog = new Datalog("ByEncoder_Linear_01");
     // for data logging use in this specific OpMode since IMU is not used directly
     private IMU imu             = null;      // Control/Expansion Hub IMU
     private final double robotHeading  = 0;
+    private final double headingOffset = 0;
     private final double headingError  = 0;
     private final double targetHeading = 0;
 
@@ -146,17 +135,8 @@ public class ByEncoder_Linear_P extends LinearOpMode {
         // Now initialize the IMU with this mounting orientation
         // Note: if you choose two conflicting directions, this initialization will cause a code exception.
         imu.initialize(new IMU.Parameters(orientationOnRobot));
-        YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+        YawPitchRollAngles orientation;
 
-        // The strings used here must correspond
-        // to the names assigned during the robot configuration step on the DS or RC devices.
-        for (int i = 0; i < motor.length; i++) {
-            motor[i] = hardwareMap.get(DcMotorEx.class, motorLabels[i]);
-            // motor stops and then brakes actively resisting any external force which attempts to turn the motor
-            motor[i].setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-            motor[i].setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-            motor[i].setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        }
 
         motor[0].setDirection(DcMotorEx.Direction.REVERSE); // motorLeftFront
         motor[1].setDirection(DcMotorEx.Direction.REVERSE); // motorLeftBack
@@ -233,21 +213,19 @@ public class ByEncoder_Linear_P extends LinearOpMode {
     public void encoderDrive(double speed,
                              double leftInches, double rightInches,
                              double timeoutS) {
-
-        final int[] target = new int[]{0, 0, 0, 0};
+        int newLeftTarget;
+        int newRightTarget;
 
         if (opModeIsActive()) { // Ensure that the opmode is still active
 
             // Determine new target position, and pass to motor controller
-            target[0] = motor[0].getCurrentPosition() + (int)(leftInches * COUNTS_PER_INCH);
-            target[1] = motor[1].getCurrentPosition() + (int)(leftInches * COUNTS_PER_INCH);
-            target[2] = motor[2].getCurrentPosition() + (int)(rightInches * COUNTS_PER_INCH);
-            target[3] = motor[3].getCurrentPosition() + (int)(rightInches * COUNTS_PER_INCH);
-            motor[0].setTargetPosition(target[0]);
-            motor[1].setTargetPosition(target[1]);
-            motor[2].setTargetPosition(target[2]);
-            motor[3].setTargetPosition(target[3]);
-            datalog.distance.set(target[0]);
+            newLeftTarget = motor[0].getCurrentPosition() + (int)(leftInches * COUNTS_PER_INCH);
+            newRightTarget = motor[2].getCurrentPosition() + (int)(rightInches * COUNTS_PER_INCH);
+            motor[0].setTargetPosition(newLeftTarget);
+            motor[1].setTargetPosition(newRightTarget);
+            motor[2].setTargetPosition(newRightTarget);
+            motor[3].setTargetPosition(newLeftTarget);
+            datalog.distance.set(newLeftTarget);
             datalog.setSpeed.set(speed);
 
             setMotorMode(DcMotor.RunMode.RUN_TO_POSITION); // Turn On RUN_TO_POSITION
@@ -265,8 +243,8 @@ public class ByEncoder_Linear_P extends LinearOpMode {
                    (runtime.seconds() < timeoutS) &&
                    (motor[0].isBusy() && motor[2].isBusy() && motor[2].isBusy() && motor[3].isBusy())) {
 
-                                        // Display current parameters to the driver
-                telemetry.addData("Running to",  " %7d :%7d", target[0], target[1]);
+                // Display current parameters to the driver
+                telemetry.addData("Running to",  " %7d :%7d", newLeftTarget,  newRightTarget);
                 telemetry.addData("Currently at",  " at %7d :%7d",
                                             motor[0].getCurrentPosition(), motor[1].getCurrentPosition());
                 telemetry.addData("Currently at",  " at %7d :%7d",
@@ -282,7 +260,7 @@ public class ByEncoder_Linear_P extends LinearOpMode {
                 datalog.writeLine();    // timestamp applied by helper class
             }
 
-            setMotorSpeed(0.0);         // Stop all motion
+            setMotorSpeed(0.0); // Stop all motion
             setMotorMode(DcMotorEx.RunMode.RUN_USING_ENCODER); // Turn off RUN_TO_POSITION
 
             sleep(10000);   // optional pause after each move.

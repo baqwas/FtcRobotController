@@ -28,4 +28,8 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+
+    // Use the latest stable version from the official GitHub releases page
+    // The version number should be updated to the latest available one
+    implementation 'org.openftc:easyopencv:1.7.3'
 }

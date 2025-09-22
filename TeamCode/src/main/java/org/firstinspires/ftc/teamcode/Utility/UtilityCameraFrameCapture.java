@@ -31,7 +31,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package org.firstinspires.ftc.teamcode.Vision.AprilTag;
+package org.firstinspires.ftc.teamcode.Utility;
 
 import android.util.Size;
 

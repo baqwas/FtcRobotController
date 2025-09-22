@@ -34,7 +34,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.teamcode.Datalogger.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 /**
  * This OpMode demonstrates a simple bang-bang control system for a flywheel motor,
@@ -48,7 +48,7 @@ import org.firstinspires.ftc.teamcode.Datalogger.Datalogger;
  * This is a simple but effective way to maintain a target speed.
  * For more advanced and stable control, you would use a PID controller.
  */
-@TeleOp(name = "Bang-Bang Control", group = "Controller")
+@TeleOp(name = "Bang-Bang Control", group = "Control")
 public class BangBangController extends OpMode {
 
     // Declare a motor object. We use DcMotorEx for velocity control.

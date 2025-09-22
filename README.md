@@ -1441,7 +1441,7 @@ Changes include:
   * Limit unbounded growth of data for telemetry.  If user does not call telemetry.update() for LinearOpMode in a timely manner, data added for telemetry might get lost if size limit is exceeded.
 
 ## Version 2.35 (released on 16.10.06)
-  * Blockly programming mode - Removed unnecesary idle() call from blocks for new project.
+  * Blockly programming mode - Removed unnecessary idle() call from blocks for new project.
 
 ## Version 2.30 (released on 16.10.05)
   * Blockly programming mode:
@@ -1596,7 +1596,7 @@ Changes include:
  * Updated compileSdkVersion for apps
  * Prevent Wi-Fi from entering power saving mode
  * removed unused import from driver station
- * Corrrected "Dead zone" joystick code.
+ * Corrected "Dead zone" joystick code.
  * LED.getDeviceName and .getConnectionInfo() return null
  * apps check for ROBOCOL_VERSION mismatch
  * Fix for Telemetry also has off-by-one errors in its data string sizing / short size limitations error
@@ -1612,10 +1612,10 @@ Changes include:
  * changes to try and flag when Wi-Fi Direct name contains non-printable characters.
  * fix to correct race condition between .run() and .close() in ReadWriteRunnableStandard.
  * updated FTDI driver
- * made ReadWriteRunnableStanard interface public.
+ * made ReadWriteRunnableStandard interface public.
  * fixed off-by-one errors in Command constructor
- * moved specific hardware implmentations into their own package.
- * moved specific gamepad implemnatations to the hardware library.
+ * moved specific hardware implementations into their own package.
+ * moved specific gamepad implementations to the hardware library.
  * changed LICENSE file to new BSD version.
  * fixed race condition when shutting down Modern Robotics USB devices.
  * methods in the ColorSensor classes have been synchronized.
@@ -1637,7 +1637,7 @@ Changes include:
  * Fix so that driver station app resets the gamepads when switching OpModes.
  * USB-related code changes to make USB comm more responsive and to display more explicit error messages.
   - Fix so that USB will recover properly if the USB bus returns garbage data.
-  - Fix USB initializtion race condition.
+  - Fix USB initialization race condition.
   - Better error reporting during FTDI open.
   - More explicit messages during USB failures.
   - Fixed bug so that USB device is closed if event loop teardown method was not called.

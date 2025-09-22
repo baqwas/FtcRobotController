@@ -22,56 +22,59 @@
  * SOFTWARE.
  */
 
+/*
+ * This revised set of files adapts the odometry system to use the four drivetrain motors' encoders
+ * instead of dedicated auxiliary encoders. This approach eliminates the need for separate odometry
+ * wheels but may be less precise due to wheel slippage and other factors inherent to driven wheels.
+ * The core logic of the Kalman filter in OdometryKalman.java is updated to process four encoder
+ * inputs and calculate the robot's pose.
+ */
 package org.firstinspires.ftc.teamcode.Holonomic;
-
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.hardware.bosch.BNO055IMU;
 
-@Autonomous(name = "Mecanum Odometry", group = "Autonomous")
-public class MecanumOdometry extends LinearOpMode {
+@Autonomous(name = "Mecanum Kalman Quad", group = "Autonomous")
+// @Disabled
+public class MecanumKalmanQuad extends LinearOpMode {
 
     private MecanumDrive mecanumDrive;
-    private Odometry odometry;
-
-    // Odometry-specific hardware
-    private DcMotorEx odometryLeft;
-    private DcMotorEx odometryRight;
-    private DcMotorEx odometryStrafe;
-
+    private OdometryKalmanQuad odometry;
+    /*
     // Movement constants (tune these for your robot)
     private final double DRIVE_SPEED = 0.5;
     private final double TURN_SPEED = 0.5;
-    private final double POSITION_TOLERANCE = 1.0; // in inches
-    private final double HEADING_TOLERANCE = 1.0; // in degrees
 
+
+     */
     @Override
     public void runOpMode() throws InterruptedException {
-        // Initialize hardware
-        mecanumDrive = new MecanumDrive(
-                hardwareMap.get(DcMotorEx.class, "frontLeft"),
-                hardwareMap.get(DcMotorEx.class, "frontRight"),
-                hardwareMap.get(DcMotorEx.class, "backLeft"),
-                hardwareMap.get(DcMotorEx.class, "backRight")
-        );
+        // Initialize drivetrain motors
+        // Drivetrain motors (now also used for odometry)
+        DcMotorEx frontLeft = hardwareMap.get(DcMotorEx.class, "frontLeft");
+        DcMotorEx frontRight = hardwareMap.get(DcMotorEx.class, "frontRight");
+        DcMotorEx backLeft = hardwareMap.get(DcMotorEx.class, "backLeft");
+        DcMotorEx backRight = hardwareMap.get(DcMotorEx.class, "backRight");
 
-        // Odometry hardware initialization (replace with your actual hardware names)
-        odometryLeft = hardwareMap.get(DcMotorEx.class, "odometryLeft");
-        odometryRight = hardwareMap.get(DcMotorEx.class, "odometryRight");
-        odometryStrafe = hardwareMap.get(DcMotorEx.class, "odometryStrafe");
+        // Set drivetrain motor modes
+        frontLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        frontRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        backLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        backRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
 
-        // Set odometry motor modes
-        odometryLeft.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odometryRight.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odometryStrafe.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odometryLeft.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        odometryRight.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        odometryStrafe.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        // Reverse motors as needed
+        frontRight.setDirection(DcMotorEx.Direction.REVERSE);
+        backRight.setDirection(DcMotorEx.Direction.REVERSE);
 
-        // Initialize odometry system
-        odometry = new Odometry(odometryLeft, odometryRight, odometryStrafe);
+        mecanumDrive = new MecanumDrive(frontLeft, frontRight, backLeft, backRight);
+
+        // IMU hardware initialization
+        BNO055IMU imu = hardwareMap.get(BNO055IMU.class, "imu");
+
+        // Initialize odometry system with all four drivetrain motors
+        odometry = new OdometryKalmanQuad(frontLeft, frontRight, backLeft, backRight, imu);
 
         telemetry.addData("Status", "Hardware Initialized. Waiting for start.");
         telemetry.update();
@@ -79,15 +82,17 @@ public class MecanumOdometry extends LinearOpMode {
         waitForStart();
 
         if (opModeIsActive()) {
-            // Example path:
-            // 1. Drive forward 24 inches
-            goToPosition(0, 24, 0);
+            // Define the path using the Waypoint class
+            Waypoint[] path = {
+                    new Waypoint(0, 24, 0),
+                    new Waypoint(24, 24, 90),
+                    new Waypoint(24, 48, 0)
+            };
 
-            // 2. Strafe right 24 inches
-            goToPosition(24, 24, 0);
-
-            // 3. Turn 90 degrees
-            goToPosition(24, 24, 90);
+            // Iterate through each waypoint and drive to it
+            for (Waypoint waypoint : path) {
+                goToPosition(waypoint.x, waypoint.y, waypoint.heading);
+            }
 
             telemetry.addData("Status", "Path complete! OpMode finished.");
             telemetry.update();
@@ -96,9 +101,12 @@ public class MecanumOdometry extends LinearOpMode {
 
     /**
      * Navigates the robot to a specific (x, y) position and a target heading.
-     * This is a simplified implementation for demonstration.
      */
     private void goToPosition(double targetX, double targetY, double targetHeading) {
+        // in inches
+        double POSITION_TOLERANCE = 1.0;
+        // in degrees
+        double HEADING_TOLERANCE = 1.0;
         while (opModeIsActive() && (
                 Math.hypot(targetX - odometry.getX(), targetY - odometry.getY()) > POSITION_TOLERANCE ||
                         Math.abs(targetHeading - odometry.getHeading()) > HEADING_TOLERANCE
