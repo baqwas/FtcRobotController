@@ -29,6 +29,7 @@
 
 package org.firstinspires.ftc.teamcode.Vision.AprilTag;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.Range;
@@ -64,7 +65,7 @@ import java.util.concurrent.TimeUnit;
  */
 
 @TeleOp(name="AprilTag: Optimize Exposure", group = "Vision")
-// @Disabled
+@Disabled
 public class AprilTagOptimizeExposure extends LinearOpMode
 {
     private VisionPortal visionPortal = null;        // Used to manage the video source.

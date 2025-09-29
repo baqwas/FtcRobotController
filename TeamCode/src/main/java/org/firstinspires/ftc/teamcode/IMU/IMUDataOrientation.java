@@ -27,6 +27,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package org.firstinspires.ftc.teamcode.IMU;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.IMU;
@@ -64,7 +65,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
  */
 
 @TeleOp(name="IMU: Data Orientation", group="Test")
-// @Disabled
+@Disabled
 public class IMUDataOrientation extends LinearOpMode {
     static RevHubOrientationOnRobot.LogoFacingDirection[] logoFacingDirections
             = RevHubOrientationOnRobot.LogoFacingDirection.values();

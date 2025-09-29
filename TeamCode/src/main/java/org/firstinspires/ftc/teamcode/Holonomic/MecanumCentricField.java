@@ -118,7 +118,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 @TeleOp(name = "Mecanum: Centric Field", group = "Test")
-// @Disabled
+@Disabled
 
 public class MecanumCentricField extends LinearOpMode {
 

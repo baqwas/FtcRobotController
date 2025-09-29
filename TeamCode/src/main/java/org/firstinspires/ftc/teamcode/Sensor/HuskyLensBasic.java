@@ -71,7 +71,7 @@ import java.util.concurrent.TimeUnit;
  * REV 4-pin sensor wire    [BLK RED WHT BLU]
  */
 @TeleOp(name = "HuskyLens: Basic test", group = "Sensor")
-//@Disabled
+@Disabled
 public class HuskyLensBasic extends LinearOpMode {
 
     private final int READ_PERIOD = 1;

@@ -26,6 +26,7 @@ package org.firstinspires.ftc.teamcode.Holonomic;
 
 import com.qualcomm.hardware.bosch.BNO055IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
@@ -44,6 +45,7 @@ import org.firstinspires.ftc.teamcode.Holonomic.KalmanFilter;
  * encoders and an IMU.
  */
 @Autonomous(name="Advanced Path Following with Kalman Filter", group="Test")
+@Disabled
 public class MecanumSensorFusion extends LinearOpMode {
 
     // --- Define your grid dimensions here ---

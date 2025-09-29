@@ -1,12 +1,13 @@
 package org.firstinspires.ftc.teamcode.Match.Auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 
-@Autonomous(name="Preview Event", group="Match", preselectTeleOp="PreviewEventTeleOp")
-// @Disabled
+@Autonomous(name="Preview Event Auto", group="Match", preselectTeleOp="TeleOpPreviewEvent")
+//@Disabled
 public class AutoPreviewEvent extends LinearOpMode {
 
     // Enumerations for Alliance and Position

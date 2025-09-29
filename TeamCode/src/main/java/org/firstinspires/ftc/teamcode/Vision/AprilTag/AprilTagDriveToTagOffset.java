@@ -30,6 +30,7 @@
 package org.firstinspires.ftc.teamcode.Vision.AprilTag;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.util.Range;
@@ -52,6 +53,7 @@ import java.util.concurrent.TimeUnit;
  */
 
 @Autonomous(name="Drive To AprilTag - Continuous Offsets", group = "AprilTag")
+@Disabled
 public class AprilTagDriveToTagOffset extends LinearOpMode
 {
     // Adjust these numbers to suit your robot.
