@@ -55,7 +55,7 @@ import java.util.Locale;
  * @see <a href="http://www.adafruit.com/products/2472">Adafruit IMU</a>
  */
 @TeleOp(name = "Sensor: IMU tracking", group = "Test")
-//@Disabled
+@Disabled
 
 public class IMUtracking extends LinearOpMode
 {

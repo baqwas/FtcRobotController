@@ -69,7 +69,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  * Measurement: R, G, B, Alpha & Proximity (1 - 10 cm)
  */
 @TeleOp(name = "Color: RGB or HSVA", group = "Sensor")
-// @Disabled
+@Disabled
 public class SensorColor extends LinearOpMode {
 
   /** The colorSensor field will contain a reference to our color sensor hardware object */

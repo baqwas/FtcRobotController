@@ -24,6 +24,7 @@ package org.firstinspires.ftc.teamcode.hello;
 import android.util.Size;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
@@ -64,6 +65,7 @@ import java.util.Locale;
 
 // @Disabled
 @Autonomous(name = "Webcam Color Sensor", group = "Hello")
+@Disabled
 public class HelloColor extends LinearOpMode
 {
     @Override

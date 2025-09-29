@@ -91,7 +91,7 @@ import org.firstinspires.ftc.teamcode.Control.PIDController;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 @TeleOp(name = "Mecanum: Rotate PID", group = "Test")
-// @Disabled
+@Disabled
 
 public class MecanumRotatePID extends LinearOpMode
 {

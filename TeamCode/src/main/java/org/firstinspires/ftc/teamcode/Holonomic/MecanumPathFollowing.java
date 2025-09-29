@@ -24,6 +24,7 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -42,6 +43,7 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import java.util.List;
 
 @Autonomous(name = "Mecanum: Dynamic Path Following", group = "Test")
+@Disabled
 public class MecanumPathFollowing extends LinearOpMode {
 
     private final int GRID_ROWS = 100;

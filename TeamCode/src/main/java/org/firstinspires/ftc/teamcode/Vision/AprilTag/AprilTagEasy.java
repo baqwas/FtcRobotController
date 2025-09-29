@@ -29,6 +29,7 @@
 
 package org.firstinspires.ftc.teamcode.Vision.AprilTag;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
@@ -63,7 +64,7 @@ import java.util.Locale;
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list.
  */
 @TeleOp(name = "AprilTag: Basic 'n Easy", group = "Vision")
-// @Disabled
+@Disabled
 public class AprilTagEasy extends LinearOpMode {
 
     private static final boolean USE_WEBCAM = true;  // true for webcam, false for phone camera

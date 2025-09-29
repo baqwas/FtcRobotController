@@ -33,6 +33,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package org.firstinspires.ftc.teamcode.Sensor;
 
 import com.qualcomm.hardware.dfrobot.HuskyLens;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
@@ -70,7 +71,7 @@ import java.util.concurrent.TimeUnit;
  * REV 4-pin sensor wire    [BLK RED WHT BLU]
  */
 @TeleOp(name = "HuskyLens: Color test", group = "Sensor")
-//@Disabled
+@Disabled
 public class HuskyLensColor extends LinearOpMode {
 
     private final int READ_PERIOD = 1;

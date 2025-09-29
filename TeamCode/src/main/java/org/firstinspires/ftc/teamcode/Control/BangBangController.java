@@ -28,6 +28,7 @@
  */
 package org.firstinspires.ftc.teamcode.Control;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -49,6 +50,7 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
  * For more advanced and stable control, you would use a PID controller.
  */
 @TeleOp(name = "Bang-Bang Control", group = "Control")
+@Disabled
 public class BangBangController extends OpMode {
 
     // Declare a motor object. We use DcMotorEx for velocity control.

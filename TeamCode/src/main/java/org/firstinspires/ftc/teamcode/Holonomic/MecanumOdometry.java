@@ -26,11 +26,13 @@ package org.firstinspires.ftc.teamcode.Holonomic;
 
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 @Autonomous(name = "Mecanum Odometry", group = "Autonomous")
+@Disabled
 public class MecanumOdometry extends LinearOpMode {
 
     private MecanumDrive mecanumDrive;

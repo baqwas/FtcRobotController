@@ -44,8 +44,8 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * @see com.qualcomm.robotcore.eventloop.opmode.Autonomous
  * @see <a href="http://ftc-docs.firstinspires.org/en/latest/programming_resources/linear_op_mode/linear-op-mode.html">FIRST Linear OpMode Documentation</a>
  */
-@TeleOp(name="Hello TeleOp", group="Hello")
-// @Disabled
+@TeleOp(name="Preview Event TeleOp", group="Match")
+//@Disabled
 public class TeleOpPreviewEvent extends LinearOpMode {
 
     /**

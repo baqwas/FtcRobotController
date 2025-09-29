@@ -30,6 +30,7 @@
 package org.firstinspires.ftc.teamcode.retired.Auto;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.hardware.IMU;
@@ -97,7 +98,7 @@ import org.firstinspires.ftc.vision.VisionPortal;
  */
 
 @Autonomous(name="CENTERSTAGE: Meet 1 Auto", group="Concept", preselectTeleOp = "CENTERSTAGE: Meet 1 TeleOp")
-//@Disabled
+@Disabled
 public class ToTeamProp extends LinearOpMode {
 
     private static final String TAG = ToTeamProp.class.getSimpleName(); // for use in logging

@@ -30,6 +30,7 @@
 package org.firstinspires.ftc.teamcode.Utility;
 
 import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -60,7 +61,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.Velocity;
  * @link https://youtu.be/DN7KW_fiVR4
  *  */
 @TeleOp(name = "Mecanum: Wheel Spin", group = "Test")
-//@Disabled
+@Disabled
 
 public class MecanumWheelSpin extends LinearOpMode {
 

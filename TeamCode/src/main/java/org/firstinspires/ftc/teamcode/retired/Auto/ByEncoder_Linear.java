@@ -30,6 +30,7 @@
 package org.firstinspires.ftc.teamcode.retired.Auto;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -68,7 +69,7 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
  */
 
 @Autonomous(name="Auto: Drive By Encoder", group="Robot")
-//@Disabled
+@Disabled
 public class ByEncoder_Linear extends LinearOpMode {
 
     // Declare OpMode members
