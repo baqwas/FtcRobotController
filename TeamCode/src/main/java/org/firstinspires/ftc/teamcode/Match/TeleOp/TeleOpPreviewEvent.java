@@ -30,6 +30,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
@@ -51,10 +52,11 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * {@link TeleOpPreviewEvent} is a basic TeleOp OpMode used for initial robot testing.
- * This class serves as a template and a guide for how to properly document code.
+ * {@link TeleOpPreviewEvent} is a basic TeleOp OpMode for the DECODE 2025-2026 season.
+ * This OpMode implements Field-Centric Mecanum drive and auxiliary controls.
+ * Hardware: Artifact Intake (Servo), Launcher (DcMotorEx), End-game Slides (DcMotorEx).
  */
-@TeleOp(name = "TeleOp Preview Event", group = "Match")
+@TeleOp(name = "Preview Event TeleOp", group = "Match")
 public class TeleOpPreviewEvent extends LinearOpMode {
 
     // --- HARDWARE DECLARATIONS ---
@@ -63,6 +65,14 @@ public class TeleOpPreviewEvent extends LinearOpMode {
     private DcMotorEx motorRightFront = null;
     private DcMotorEx motorRightBack = null;
     private IMU imu = null;
+
+    // --- DECODE 2025-2026 AUXILIARY HARDWARE DECLARATIONS ---
+    // Artifact Intake is now a Servo
+    private Servo servoIntake = null;
+    // Launcher is now a DcMotorEx
+    private DcMotorEx motorLauncher = null;
+    // End-game Slides/Elevation is now a DcMotorEx
+    private DcMotorEx motorSlides = null;
 
     // --- VISION DECLARATIONS ---
     private AprilTagProcessor aprilTagProcessor;
@@ -74,10 +84,19 @@ public class TeleOpPreviewEvent extends LinearOpMode {
     private ElapsedTime runtime = new ElapsedTime();
     private String selectedAlliance = "RED"; // Default to RED
     private boolean aAlreadyPressed = false;
+    private double launcherPower = 0.0; // State variable for the launcher motor
 
     // --- DRIVE CONSTANTS ---
     private final double DRIVE_SPEED = 0.5;
     private final double TURN_SPEED = 0.3;
+
+    // --- AUXILIARY CONSTANTS ---
+    // Servo positions for the Artifact Intake
+    private final double INTAKE_OPEN_POS = 0.8;
+    private final double INTAKE_CLOSED_POS = 0.2;
+    // Launcher Motor power (for a fast, short launch)
+    private final double LAUNCHER_FIRE_POWER = 1.0;
+    private final double SLIDES_MAX_POWER = 0.75; // Limit slides speed for control
 
     @Override
     public void runOpMode() {
@@ -91,7 +110,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         initializeVision();
 
         telemetry.addData("Status", "Initialization Complete");
-        telemetry.addData("Alliance", "Current: RED (Press A to switch)");
+        telemetry.addData("Alliance", "Current: RED (Press A or Cross (X) to switch)");
         telemetry.update();
 
         // --- 2. WAITING FOR START ---
@@ -114,7 +133,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
                 handleAutoNavActivation();
             }
 
-            // Other subsystems (e.g., intake, arm) could be handled here
+            // Handle the new auxiliary systems for DECODE
             handleAuxiliarySystems();
 
             // Final update for Driver Station
@@ -126,10 +145,10 @@ public class TeleOpPreviewEvent extends LinearOpMode {
      * Initializes all motors and sets their directions and modes.
      */
     private void initializeHardware() {
-        motorLeftFront = hardwareMap.get(DcMotorEx.class, "left_front");
-        motorLeftBack = hardwareMap.get(DcMotorEx.class, "left_back");
-        motorRightFront = hardwareMap.get(DcMotorEx.class, "right_front");
-        motorRightBack = hardwareMap.get(DcMotorEx.class, "right_back");
+        motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+        motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+        motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+        motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
         // Set direction: FTC uses a convention where left motors are typically reversed
         motorLeftFront.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -140,6 +159,28 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         // Set modes
         setMotorRunMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         setMotorZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        // --- AUXILIARY HARDWARE INITIALIZATION (DECODE 2025-2026) ---
+        try {
+            // Artifact Intake (Servo)
+            servoIntake = hardwareMap.get(Servo.class, "servoIntake");
+            servoIntake.setPosition(INTAKE_CLOSED_POS); // Start in the closed/safe position
+
+            // Launcher (DcMotorEx)
+            motorLauncher = hardwareMap.get(DcMotorEx.class, "motorlauncher");
+            motorLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            motorLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            motorLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // Use RUN_WITHOUT_ENCODER for launching
+
+            // End-game Slides/Elevation (DcMotorEx)
+            motorSlides = hardwareMap.get(DcMotorEx.class, "motorSlides");
+            motorSlides.setDirection(DcMotorSimple.Direction.FORWARD);
+            motorSlides.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            motorSlides.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // Simple power control for TeleOp
+
+        } catch (Exception e) {
+            telemetry.addData("WARN", "Auxiliary hardware not found. Check config for artifact_intake_servo, launcher_motor, slides_motor.");
+        }
     }
 
     /**
@@ -149,7 +190,6 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         // Retrieve the IMU from the hardware map
         imu = hardwareMap.get(IMU.class, "imu");
 
-        // --- RESOLUTION FOR ERROR 1: RevHubOrientationOnRobot Constructor ---
         // Configuration based on user input:
         // RobotController is mounted with the **logo facing forward** and the **USB port facing upward**.
         RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.FORWARD;
@@ -175,17 +215,10 @@ public class TeleOpPreviewEvent extends LinearOpMode {
                 .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11) // Standard FTC family
                 .build();
 
-        // --- RESOLUTION FOR ERROR 2: get10dofLibrary() ---
-        // The method 'get10dofLibrary' is not part of the standard AprilTagProcessor.Builder() flow.
-        // The processor automatically uses the necessary libraries internally.
-        // We ensure no attempt is made to call this non-existent method by simply removing it.
-
         // Create the Vision Portal
         visionPortal = new VisionPortal.Builder()
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .addProcessor(aprilTagProcessor)
-                // Disable telemetry from the VisionPortal itself to clean up the DS screen
-                .setTelemetry(telemetry)
                 .build();
     }
 
@@ -200,7 +233,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
                 selectedAlliance = "RED";
             }
             aAlreadyPressed = true;
-            telemetry.addData("Alliance", "Selected: " + selectedAlliance + " (Press A to switch)");
+            telemetry.addData("Alliance", "Selected: " + selectedAlliance + " (Press A or Cross (X) to switch)");
             telemetry.update();
         } else if (!gamepad1.a) {
             aAlreadyPressed = false;
@@ -262,7 +295,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         }
 
         if (detection == null) {
-            telemetry.addData("AutoNav Status", "Target Tag ID " + TARGET_TAG_ID + " Not Found!");
+            telemetry.addData("AutoNav", "Target Tag ID " + TARGET_TAG_ID + " Not Found!");
             stopDriveMotors();
             return;
         }
@@ -293,25 +326,58 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         if (Math.abs(rangeError) > 0.5) { // Stop when within 0.5 inches
             motorLeftFront.setPower(rangeDrive + strafeDrive + turnDrive);
             motorLeftBack.setPower(rangeDrive - strafeDrive + turnDrive);
-            motorRightFront.setPower(rangeDrive + straafeDrive - turnDrive);
+            motorRightFront.setPower(rangeDrive + strafeDrive - turnDrive);
             motorRightBack.setPower(rangeDrive - strafeDrive - turnDrive);
 
-            telemetry.addData("AutoNav Status", "Tracking Goal Tag...");
+            telemetry.addData("AutoNav", "Tracking Goal Tag...");
             telemetry.addData("Range/Bearing/Yaw Err", "%.1f, %.1f, %.1f", rangeError, bearingError, yawError);
             telemetry.addData("Range/Bearing/Elev", "%.1f, %.1f, %.1f", detection.ftcPose.range, detection.ftcPose.bearing, detection.ftcPose.elevation);
         } else {
             stopDriveMotors();
             isAutoNavActive = false;
-            telemetry.addData("AutoNav Status", "Reached Target Position!");
+            telemetry.addData("AutoNav", "Reached Target Position!");
         }
     }
 
     /**
-     * Placeholder for any auxiliary systems like intake, arm, or drone launcher.
+     * Handles control logic for auxiliary systems (Intake, Launcher, Slides) using Gamepad 2.
+     * Uses the requested hardware types and control mappings.
      */
     private void handleAuxiliarySystems() {
-        // Example: If gamepad2.right_bumper, run intake motor
-        // Example: If gamepad2.left_bumper, raise arm
+        if (servoIntake == null || motorLauncher == null || motorSlides == null) {
+            // Safety check in case hardware mapping failed
+            return;
+        }
+
+        // --- ARTIFACT INTAKE CONTROL (GAMEPAD 2 BUMPERS) ---
+        // Right Bumper (R1/RB): Open Intake Position (to accept Artifacts)
+        // Left Bumper (L1/LB): Closed Intake Position (to hold/secure Artifacts)
+        if (gamepad2.right_bumper) {
+            servoIntake.setPosition(INTAKE_OPEN_POS);
+        } else if (gamepad2.left_bumper) {
+            servoIntake.setPosition(INTAKE_CLOSED_POS);
+        }
+
+        // --- END-GAME SLIDES CONTROL (GAMEPAD 2 LEFT STICK Y-AXIS) ---
+        // Left Stick Y controls elevation proportionally.
+        // Y-axis is negated: stick UP (-1.0) should correspond to slides UP (positive power)
+        double slidesPower = -gamepad2.left_stick_y;
+
+        // Apply max power limit
+        slidesPower = Math.max(-SLIDES_MAX_POWER, Math.min(slidesPower, SLIDES_MAX_POWER));
+
+        motorSlides.setPower(slidesPower);
+
+
+        // --- LAUNCHER CONTROL (GAMEPAD 2 Y BUTTON) ---
+        // Y/Triangle button fires the motor launcher at max speed, only while held.
+        if (gamepad2.y) {
+            launcherPower = LAUNCHER_FIRE_POWER; // Set launcher motor to high power
+        } else {
+            launcherPower = 0.0; // Stop motor when button is released
+        }
+
+        motorLauncher.setPower(launcherPower);
     }
 
     /**
@@ -359,7 +425,16 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         telemetry.addData("Runtime", runtime.toString());
         telemetry.addData("Yaw (Field)", "%.1f deg", imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
         telemetry.addData("Alliance", selectedAlliance);
-        telemetry.addData("AutoNav Mode", isAutoNavActive ? "ACTIVE (Tracking Tag " + TARGET_TAG_ID + ")" : "MANUAL");
+        telemetry.addData("AutoNav", isAutoNavActive ? "ACTIVE (Tracking Tag " + TARGET_TAG_ID + ")" : "MANUAL");
+
+        // DECODE AUXILIARY SYSTEM TELEMETRY
+        // Fixed: Use getPosition() for Servo, not getPower()
+        telemetry.addData("Intake Servo Pos", servoIntake != null ? servoIntake.getPosition() : "N/A");
+
+        // Fixed: Ensure the correct motor objects are checked/used for power
+        telemetry.addData("Launcher Power", motorLauncher != null ? motorLauncher.getPower() : "N/A");
+        telemetry.addData("Slides Power", motorSlides != null ? motorSlides.getPower() : "N/A");
+
         telemetry.update();
     }
 }
