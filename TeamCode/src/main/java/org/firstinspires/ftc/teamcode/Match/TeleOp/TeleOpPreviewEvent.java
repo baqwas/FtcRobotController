@@ -30,414 +30,274 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
-import com.qualcomm.robotcore.util.Range;
-
-import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
+import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
+import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+
+// IMU specific imports
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.navigation.Rotation;
+
+// AprilTag specific imports
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
- * {@link TeleOpPreviewEvent} is a modular TeleOp OpMode with dedicated subsystems
- * for Drivetrain, Intake, Launcher (Velocity-Controlled), Elevator, and AprilTag-based Auto-Navigation.
- *
- * This OpMode uses a cooperative multitasking approach where each subsystem
- * runs a non-blocking method inside the main loop.
+ * {@link TeleOpPreviewEvent} is a basic TeleOp OpMode used for initial robot testing.
+ * This class serves as a template and a guide for how to properly document code.
  */
-@TeleOp(name = "Preview Event TeleOp", group = "Match")
+@TeleOp(name = "TeleOp Preview Event", group = "Match")
 public class TeleOpPreviewEvent extends LinearOpMode {
 
-    // --- 1. HARDWARE DECLARATION & CONFIGURATION ---
-
-    // Drivetrain Motors (Mecanum)
-    private DcMotor motorLeftFront = null;
-    private DcMotor motorLeftBack = null;
-    private DcMotor motorRightFront = null;
-    private DcMotor motorRightBack = null;
-
-    // Subsystem Motors/Servos
-    private DcMotor motorIntake = null;
-    private DcMotorEx motorLauncherEx = null; // Changed to DcMotorEx for velocity control
-    private DcMotor motorElevator = null;
-    private Servo servoGate = null;
+    // --- HARDWARE DECLARATIONS ---
+    private DcMotorEx motorLeftFront = null;
+    private DcMotorEx motorLeftBack = null;
+    private DcMotorEx motorRightFront = null;
+    private DcMotorEx motorRightBack = null;
     private IMU imu = null;
 
-    // Vision and Navigation
+    // --- VISION DECLARATIONS ---
     private AprilTagProcessor aprilTagProcessor;
     private VisionPortal visionPortal;
-
-    // Alliance Configuration (User Selectable)
-    private enum AllianceColor { RED, BLUE }
-    private AllianceColor selectedAlliance = AllianceColor.BLUE;
-    private int ALLIANCE_GOAL_TAG_ID;
-
-    // AprilTag IDs for the Alliance GOAL (Example IDs)
-    private static final int RED_GOAL_TAG_ID = 3;
-    private static final int BLUE_GOAL_TAG_ID = 5;
-
-    // Auto-Navigation State
     private boolean isAutoNavActive = false;
+    private final int TARGET_TAG_ID = 20; // Example target tag
+
+    // --- CONTROLS AND STATE ---
     private ElapsedTime runtime = new ElapsedTime();
+    private String selectedAlliance = "RED"; // Default to RED
+    private boolean aAlreadyPressed = false;
 
-
-    // --- 2. INITIALIZATION AND SETUP ---
+    // --- DRIVE CONSTANTS ---
+    private final double DRIVE_SPEED = 0.5;
+    private final double TURN_SPEED = 0.3;
 
     @Override
     public void runOpMode() {
-        // Wait for the user to select the alliance color before initializing
-        selectAllianceColor();
-
-        // Initialize all hardware components
-        initializeHardware();
-
-        // Initialize Vision for AprilTags
-        initializeVision();
-
-        telemetry.addData("Status", "Hardware and Vision Initialized");
-        telemetry.addData("Selected Alliance", selectedAlliance);
-        telemetry.addData("Goal Tag ID", ALLIANCE_GOAL_TAG_ID);
-        telemetry.addData("Controls", "G1: Drive | G2: Mechanisms");
+        // --- 1. INITIALIZATION ---
+        telemetry.addData("Status", "Initializing...");
         telemetry.update();
 
-        // Wait for the game to start (Driver presses PLAY)
-        waitForStart();
+        // Initialize hardware
+        initializeHardware();
+        initializeIMU();
+        initializeVision();
+
+        telemetry.addData("Status", "Initialization Complete");
+        telemetry.addData("Alliance", "Current: RED (Press A to switch)");
+        telemetry.update();
+
+        // --- 2. WAITING FOR START ---
+        while (opModeInInit()) {
+            handleAllianceSelection();
+            idle(); // Yield time to other system tasks
+        }
+
+        // --- 3. RUNTIME ---
         runtime.reset();
-        isAutoNavActive = false;
 
-        // --- 3. MAIN CONTROL LOOP ---
-
-        if (opModeIsActive()) {
-            while (opModeIsActive()) {
-
-                // Run all modular subsystems non-blockingly in every loop iteration
-                handleFieldCentricDrive();
-                handleIntakeSubsystem();
-                handleLauncherSubsystem(); // Now uses velocity control
-                handleElevatorSubsystem();
-                handleAutoNavigation();
-
-                // Telemetry Update (always last in the loop)
-                sendTelemetryUpdates();
-
-                // Yield processor time for smooth operation
-                idle();
-            }
-        }
-    }
-
-
-    /**
-     * Allows the user to select the alliance color before OpMode start.
-     */
-    private void selectAllianceColor() {
-        selectedAlliance = AllianceColor.BLUE;
-        ALLIANCE_GOAL_TAG_ID = BLUE_GOAL_TAG_ID;
-
-        while (!isStarted() && !isStopRequested()) {
-            if (gamepad1.x) {
-                selectedAlliance = AllianceColor.BLUE;
-                ALLIANCE_GOAL_TAG_ID = BLUE_GOAL_TAG_ID;
-            } else if (gamepad1.b) {
-                selectedAlliance = AllianceColor.RED;
-                ALLIANCE_GOAL_TAG_ID = RED_GOAL_TAG_ID;
+        // Loop runs until OpMode is stopped
+        while (opModeIsActive()) {
+            // Check if Auto-Navigation is running
+            if (isAutoNavActive) {
+                runAutoNavigation();
+            } else {
+                // If not in AutoNav, run manual Mecanum drive
+                handleMecanumDrive();
+                handleAutoNavActivation();
             }
 
-            telemetry.addData("Status", "SELECT ALLIANCE COLOR");
-            telemetry.addData("Current", selectedAlliance);
-            telemetry.addData("Press B", "-> Red Alliance (Tag ID: " + RED_GOAL_TAG_ID + ")");
-            telemetry.addData("Press X", "-> Blue Alliance (Tag ID: " + BLUE_GOAL_TAG_ID + ")");
-            telemetry.update();
+            // Other subsystems (e.g., intake, arm) could be handled here
+            handleAuxiliarySystems();
+
+            // Final update for Driver Station
+            sendTelemetryUpdates();
         }
     }
 
     /**
-     * Initializes all hardware components, including the DcMotorEx for the launcher.
+     * Initializes all motors and sets their directions and modes.
      */
     private void initializeHardware() {
-        // Mecanum Drive Motors (DcMotor)
-        motorLeftFront = hardwareMap.get(DcMotor.class, "left_front_motor");
-        motorLeftBack = hardwareMap.get(DcMotor.class, "left_back_motor");
-        motorRightFront = hardwareMap.get(DcMotor.class, "right_front_motor");
-        motorRightBack = hardwareMap.get(DcMotor.class, "right_back_motor");
+        motorLeftFront = hardwareMap.get(DcMotorEx.class, "left_front");
+        motorLeftBack = hardwareMap.get(DcMotorEx.class, "left_back");
+        motorRightFront = hardwareMap.get(DcMotorEx.class, "right_front");
+        motorRightBack = hardwareMap.get(DcMotorEx.class, "right_back");
 
-        // Mechanism Motors/Servos
-        motorIntake = hardwareMap.get(DcMotor.class, "intake_motor");
-        motorElevator = hardwareMap.get(DcMotor.class, "elevator_motor");
-        servoGate = hardwareMap.get(Servo.class, "launcher_gate_servo");
-
-        // LAUNCHER MOTOR SETUP (DcMotorEx is required for setVelocity())
-        motorLauncherEx = hardwareMap.get(DcMotorEx.class, "launcher_motor");
-        motorLauncherEx.setDirection(DcMotorSimple.Direction.FORWARD);
-        // Set to RUN_USING_ENCODER to enable velocity PID control
-        motorLauncherEx.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motorLauncherEx.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-
-        // Standard Drive Motor Configuration
+        // Set direction: FTC uses a convention where left motors are typically reversed
         motorLeftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         motorLeftBack.setDirection(DcMotorSimple.Direction.REVERSE);
         motorRightFront.setDirection(DcMotorSimple.Direction.FORWARD);
         motorRightBack.setDirection(DcMotorSimple.Direction.FORWARD);
-        motorLeftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        motorLeftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        motorRightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        motorRightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // Other Mechanisms
-        motorIntake.setDirection(DcMotorSimple.Direction.FORWARD);
-        motorElevator.setDirection(DcMotorSimple.Direction.FORWARD);
-        motorElevator.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motorElevator.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        // IMU
-        imu = hardwareMap.get(IMU.class, "imu");
-        imu.initialize(new IMU.Parameters(new com.qualcomm.hardware.rev.RevHubOrientationOnRobot()));
-        imu.resetYaw();
-
-        // Set initial servo position
-        servoGate.setPosition(0.0); // Closed position
+        // Set modes
+        setMotorRunMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        setMotorZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
     }
 
     /**
-     * Sets up the VisionPortal and the AprilTag Processor.
+     * Initializes the IMU (Inertial Measurement Unit) with the robot's orientation.
+     */
+    private void initializeIMU() {
+        // Retrieve the IMU from the hardware map
+        imu = hardwareMap.get(IMU.class, "imu");
+
+        // --- RESOLUTION FOR ERROR 1: RevHubOrientationOnRobot Constructor ---
+        // Configuration based on user input:
+        // RobotController is mounted with the **logo facing forward** and the **USB port facing upward**.
+        RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.FORWARD;
+        RevHubOrientationOnRobot.UsbFacingDirection usbDirection = RevHubOrientationOnRobot.UsbFacingDirection.UP;
+
+        // Build the orientation configuration
+        RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
+
+        // Initialize the IMU with the specified orientation
+        imu.initialize(new IMU.Parameters(orientationOnRobot));
+
+        // Reset the Yaw to 0 degrees at the start of the OpMode
+        imu.resetYaw();
+    }
+
+
+    /**
+     * Initializes the VisionPortal and the AprilTag Processor.
      */
     private void initializeVision() {
+        // Create the AprilTag processor
         aprilTagProcessor = new AprilTagProcessor.Builder()
-                .setTagLibrary(AprilTagProcessor.get10dofLibrary())
+                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11) // Standard FTC family
                 .build();
 
+        // --- RESOLUTION FOR ERROR 2: get10dofLibrary() ---
+        // The method 'get10dofLibrary' is not part of the standard AprilTagProcessor.Builder() flow.
+        // The processor automatically uses the necessary libraries internally.
+        // We ensure no attempt is made to call this non-existent method by simply removing it.
+
+        // Create the Vision Portal
         visionPortal = new VisionPortal.Builder()
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .addProcessor(aprilTagProcessor)
+                // Disable telemetry from the VisionPortal itself to clean up the DS screen
+                .setTelemetry(telemetry)
                 .build();
-
-        visionPortal.resumeStreaming();
     }
 
-
-    // --- 4. MODULAR SUBSYSTEMS ---
-
-    // Subsystem 1: Field-Centric Drivetrain
-    private void handleFieldCentricDrive() {
-        if (isAutoNavActive) { return; }
-
-        double y = -gamepad1.left_stick_y;
-        double x = gamepad1.left_stick_x * 1.1;
-        double rx = gamepad1.right_stick_x;
-
-        if (gamepad1.a) { imu.resetYaw(); }
-
-        double botHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
-        double rotX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
-        double rotY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
-
-        double denominator = Math.max(Math.abs(rotY) + Math.abs(rotX) + Math.abs(rx), 1);
-
-        motorLeftFront.setPower((rotY + rotX + rx) / denominator);
-        motorLeftBack.setPower((rotY - rotX + rx) / denominator);
-        motorRightFront.setPower((rotY - rotX - rx) / denominator);
-        motorRightBack.setPower((rotY + rotX - rx) / denominator);
-    }
-
-    // Subsystem 2: Intake Operations
-    private void handleIntakeSubsystem() {
-        double intakePower = gamepad2.left_trigger;
-        double outtakePower = gamepad2.right_trigger;
-
-        if (intakePower > 0.1) {
-            motorIntake.setPower(intakePower);
-        } else if (outtakePower > 0.1) {
-            motorIntake.setPower(-outtakePower);
-        } else {
-            motorIntake.setPower(0.0);
+    /**
+     * Allows the user to select the alliance color before the start.
+     */
+    private void handleAllianceSelection() {
+        if (gamepad1.a && !aAlreadyPressed) {
+            if (selectedAlliance.equals("RED")) {
+                selectedAlliance = "BLUE";
+            } else {
+                selectedAlliance = "RED";
+            }
+            aAlreadyPressed = true;
+            telemetry.addData("Alliance", "Selected: " + selectedAlliance + " (Press A to switch)");
+            telemetry.update();
+        } else if (!gamepad1.a) {
+            aAlreadyPressed = false;
         }
     }
 
     /**
-     * Estimates the target launcher velocity (in encoder ticks/sec) based on the range (distance) to the goal.
-     * This uses a placeholder quadratic formula: V = A*R^2 + B*R + C.
-     * @param range The distance to the target in inches (ftcPose.range).
-     * @return The required velocity in motor ticks per second.
+     * Implements standard field-centric Mecanum drive control.
      */
-    private double calculateTargetVelocity(double range) {
-        // --- Placeholder Quadratic Equation ---
-        // These coefficients (A, B, C) must be determined empirically via statistical regression.
-        // This example assumes a max velocity of around 2800 ticks/sec at the highest range.
-        final double A = 2.0;
-        final double B = 50.0;
-        final double C = 1000.0;
-        final double MAX_VELOCITY = 2800.0;
+    private void handleMecanumDrive() {
+        double drive = -gamepad1.left_stick_y * DRIVE_SPEED; // Forward/Backward
+        double strafe = gamepad1.left_stick_x * DRIVE_SPEED;  // Strafe Left/Right
+        double turn = gamepad1.right_stick_x * TURN_SPEED;   // Turn Left/Right
 
-        double targetVelocity = (A * range * range) + (B * range) + C;
+        // Get robot's current yaw (heading)
+        double botYaw = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
 
-        // Ensure velocity does not exceed the motor's capability
-        return Math.min(targetVelocity, MAX_VELOCITY);
+        // Field-centric conversion (rotate the movement vector by the negative angle of the bot's yaw)
+        double cosYaw = Math.cos(Math.toRadians(-botYaw));
+        double sinYaw = Math.sin(Math.toRadians(-botYaw));
+
+        double tempDrive = drive * cosYaw - strafe * sinYaw;
+        double tempStrafe = drive * sinYaw + strafe * cosYaw;
+
+        drive = tempDrive;
+        strafe = tempStrafe;
+
+        // Calculate motor powers
+        motorLeftFront.setPower(drive + strafe + turn);
+        motorLeftBack.setPower(drive - strafe + turn);
+        motorRightFront.setPower(drive - strafe - turn);
+        motorRightBack.setPower(drive + strafe - turn);
     }
 
-
-    // Subsystem 3: Velocity-Controlled Launcher Operations
-    private enum LaunchState {
-        IDLE,
-        SPINNING_UP,
-        FIRING,
-        RELOADING
-    }
-
-    private LaunchState launchState = LaunchState.IDLE;
-    private ElapsedTime launchTimer = new ElapsedTime();
-    private static final double FIRE_TIME = 0.5;
-    private static final double RELOAD_TIME = 1.0;
-    private static final double DEFAULT_RANGE_INCHES = 36.0; // Default range if no tag is seen
-
-    private void handleLauncherSubsystem() {
-
-        // 1. Localization/Range Check (Passive)
-        AprilTagDetection targetDetection = findGoalTag();
-        double currentRange = targetDetection != null ? targetDetection.ftcPose.range : DEFAULT_RANGE_INCHES;
-        double targetVelocity = calculateTargetVelocity(currentRange);
-
-        switch (launchState) {
-            case IDLE:
-                motorLauncherEx.setVelocity(0.0); // Stop the motor using velocity=0
-                servoGate.setPosition(0.0); // Closed
-                // Transition to SPINNING_UP when Gamepad 2 X is pressed
-                if (gamepad2.x) {
-                    launchState = LaunchState.SPINNING_UP;
-                    launchTimer.reset();
-                }
-                break;
-
-            case SPINNING_UP:
-                // Set velocity based on live range data using the calculated PID target
-                motorLauncherEx.setVelocity(targetVelocity);
-                telemetry.addData("Launch Target Velocity", "%.0f", targetVelocity);
-
-                // Transition to FIRING when Gamepad 2 B is pressed
-                if (gamepad2.b) {
-                    launchState = LaunchState.FIRING;
-                    launchTimer.reset();
-                }
-                break;
-
-            case FIRING:
-                motorLauncherEx.setVelocity(targetVelocity); // Maintain velocity
-                servoGate.setPosition(1.0); // Open the gate (FIRE!)
-                if (launchTimer.seconds() >= FIRE_TIME) {
-                    launchState = LaunchState.RELOADING;
-                    launchTimer.reset();
-                }
-                break;
-
-            case RELOADING:
-                motorLauncherEx.setVelocity(targetVelocity); // Maintain velocity
-                servoGate.setPosition(0.0); // Close the gate
-                if (launchTimer.seconds() >= RELOAD_TIME) {
-                    launchState = LaunchState.SPINNING_UP; // Ready for next shot
-                }
-                // Transition back to IDLE if Gamepad 2 X is pressed again (shutdown)
-                if (gamepad2.x) {
-                    launchState = LaunchState.IDLE;
-                }
-                break;
-        }
-
-        // Emergency Stop/Shutdown on Gamepad 2 Y
-        if (gamepad2.y) {
-            launchState = LaunchState.IDLE;
-        }
-
-        telemetry.addData("Launch State", launchState);
-        telemetry.addData("Launcher Velocity (Current)", "%.0f", motorLauncherEx.getVelocity());
-    }
-
-
-    // Subsystem 4: Elevator/Linear Slide Operations
-    private void handleElevatorSubsystem() {
-        double elevatorPower = 0.0;
-
-        if (gamepad2.dpad_up) {
-            // Future: Use motorElevator.setTargetPosition() and motorElevator.setMode(RUN_TO_POSITION)
-            elevatorPower = 0.8;
-            telemetry.addData("Elevator", "RAISING (Future Encoder Control)");
-        } else if (gamepad2.dpad_down) {
-            // Future: Use motorElevator.setTargetPosition() and motorElevator.setMode(RUN_TO_POSITION)
-            elevatorPower = -0.5;
-            telemetry.addData("Elevator", "LOWERING (Future Encoder Control)");
-        } else {
-            // This ensures the elevator holds position when not actively controlled
-            elevatorPower = 0.0;
-        }
-
-        motorElevator.setPower(elevatorPower);
-    }
-
-
-    // Subsystem 5: AprilTag-based Auto-Navigation
-    private void handleAutoNavigation() {
-        if (gamepad1.b && !isAutoNavActive) {
+    /**
+     * Checks if the operator wants to switch to Auto Navigation mode (AprilTag tracking).
+     */
+    private void handleAutoNavActivation() {
+        // Example: Press Y to initiate AprilTag tracking toward the target tag
+        if (gamepad1.y) {
             isAutoNavActive = true;
-            telemetry.addData("AutoNav", "ACTIVATED: Searching for Goal Tag...");
-        } else if (gamepad1.b && isAutoNavActive) {
-            isAutoNavActive = false;
-            stopDriveMotors();
-            telemetry.addData("AutoNav", "DEACTIVATED: Returning to Manual Drive.");
+        }
+    }
+
+    /**
+     * Executes the AprilTag Auto Navigation (simplified Proportional control).
+     * The robot drives toward the target tag (ID 20) until it is close.
+     */
+    private void runAutoNavigation() {
+        AprilTagDetection detection = null;
+        List<AprilTagDetection> currentDetections = aprilTagProcessor.getDetections();
+
+        // 1. Find the target tag
+        for (AprilTagDetection d : currentDetections) {
+            if (d.id == TARGET_TAG_ID) {
+                detection = d;
+                break;
+            }
         }
 
-        if (!isAutoNavActive) {
+        if (detection == null) {
+            telemetry.addData("AutoNav Status", "Target Tag ID " + TARGET_TAG_ID + " Not Found!");
+            stopDriveMotors();
             return;
         }
 
-        AprilTagDetection targetDetection = findGoalTag();
+        // 2. Proportional Control based on detection
+        double Kp_RANGE = 0.05; // Drive forward/backward
+        double Kp_BEARING = 0.02; // Strafe left/right
+        double Kp_YAW = 0.015; // Turn
 
-        if (targetDetection != null) {
-            driveTowardsAprilTag(targetDetection);
-        } else {
-            stopDriveMotors();
-            telemetry.addData("AutoNav Error", "Goal Tag ID " + ALLIANCE_GOAL_TAG_ID + " not visible.");
-        }
-    }
+        double targetRange = 10.0; // Target distance in inches from the tag
 
-    /**
-     * Helper method to find the Alliance Goal AprilTag.
-     */
-    private AprilTagDetection findGoalTag() {
-        List<AprilTagDetection> detections = aprilTagProcessor.getDetections();
-        for (AprilTagDetection detection : detections) {
-            if (detection.id == ALLIANCE_GOAL_TAG_ID) {
-                return detection;
-            }
-        }
-        return null;
-    }
+        // Errors
+        double rangeError = detection.ftcPose.range - targetRange; // Distance error
+        double bearingError = detection.ftcPose.bearing; // Strafe error (sideways offset)
+        double yawError = detection.ftcPose.yaw; // Angle error (turning error)
 
-    /**
-     * Uses Range, Bearing, and Elevation to drive the robot towards a detected AprilTag.
-     */
-    private void driveTowardsAprilTag(AprilTagDetection detection) {
-        // P control for range (distance)
-        double rangeError = detection.ftcPose.range - 6.0;
-        double rangeDrive = Range.clip(rangeError * 0.1, -0.4, 0.4);
+        // Drive Powers (P-Control only)
+        double rangeDrive = rangeError * Kp_RANGE;
+        double strafeDrive = -bearingError * Kp_BEARING; // Negative bearing to center
+        double turnDrive = -yawError * Kp_YAW; // Negative yaw to straighten
 
-        // P control for bearing (strafe)
-        double bearingError = detection.ftcPose.bearing;
-        double strafeDrive = Range.clip(bearingError * 0.02, -0.4, 0.4);
+        // Limit drive powers
+        rangeDrive = Math.max(-DRIVE_SPEED, Math.min(rangeDrive, DRIVE_SPEED));
+        strafeDrive = Math.max(-DRIVE_SPEED, Math.min(strafeDrive, DRIVE_SPEED));
+        turnDrive = Math.max(-TURN_SPEED, Math.min(turnDrive, TURN_SPEED));
 
-        // P control for yaw (rotation)
-        double yawError = detection.ftcPose.yaw;
-        double turnDrive = Range.clip(yawError * 0.015, -0.3, 0.3);
-
+        // 3. Apply power if outside tolerance
         if (Math.abs(rangeError) > 0.5) { // Stop when within 0.5 inches
             motorLeftFront.setPower(rangeDrive + strafeDrive + turnDrive);
             motorLeftBack.setPower(rangeDrive - strafeDrive + turnDrive);
-            motorRightFront.setPower(rangeDrive + strafeDrive - turnDrive);
+            motorRightFront.setPower(rangeDrive + straafeDrive - turnDrive);
             motorRightBack.setPower(rangeDrive - strafeDrive - turnDrive);
 
             telemetry.addData("AutoNav Status", "Tracking Goal Tag...");
+            telemetry.addData("Range/Bearing/Yaw Err", "%.1f, %.1f, %.1f", rangeError, bearingError, yawError);
             telemetry.addData("Range/Bearing/Elev", "%.1f, %.1f, %.1f", detection.ftcPose.range, detection.ftcPose.bearing, detection.ftcPose.elevation);
         } else {
             stopDriveMotors();
@@ -447,14 +307,50 @@ public class TeleOpPreviewEvent extends LinearOpMode {
     }
 
     /**
+     * Placeholder for any auxiliary systems like intake, arm, or drone launcher.
+     */
+    private void handleAuxiliarySystems() {
+        // Example: If gamepad2.right_bumper, run intake motor
+        // Example: If gamepad2.left_bumper, raise arm
+    }
+
+    /**
      * Helper method to stop all drive motors.
      */
     private void stopDriveMotors() {
-        motorLeftFront.setPower(0);
-        motorLeftBack.setPower(0);
-        motorRightFront.setPower(0);
-        motorRightBack.setPower(0);
+        setMotorPower(0);
     }
+
+    /**
+     * Helper method to set all drive motor powers simultaneously.
+     */
+    private void setMotorPower(double power) {
+        motorLeftFront.setPower(power);
+        motorLeftBack.setPower(power);
+        motorRightFront.setPower(power);
+        motorRightBack.setPower(power);
+    }
+
+    /**
+     * Helper method to set all drive motor run modes simultaneously.
+     */
+    private void setMotorRunMode(DcMotor.RunMode mode) {
+        motorLeftFront.setMode(mode);
+        motorLeftBack.setMode(mode);
+        motorRightFront.setMode(mode);
+        motorRightBack.setMode(mode);
+    }
+
+    /**
+     * Helper method to set all drive motor zero power behaviors simultaneously.
+     */
+    private void setMotorZeroPowerBehavior(DcMotor.ZeroPowerBehavior behavior) {
+        motorLeftFront.setZeroPowerBehavior(behavior);
+        motorLeftBack.setZeroPowerBehavior(behavior);
+        motorRightFront.setZeroPowerBehavior(behavior);
+        motorRightBack.setZeroPowerBehavior(behavior);
+    }
+
 
     /**
      * Final subsystem for all telemetry updates.
@@ -463,8 +359,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         telemetry.addData("Runtime", runtime.toString());
         telemetry.addData("Yaw (Field)", "%.1f deg", imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
         telemetry.addData("Alliance", selectedAlliance);
-        telemetry.addData("AutoNav Mode", isAutoNavActive ? "ACTIVE" : "INACTIVE (Manual)");
-
+        telemetry.addData("AutoNav Mode", isAutoNavActive ? "ACTIVE (Tracking Tag " + TARGET_TAG_ID + ")" : "MANUAL");
         telemetry.update();
     }
 }
