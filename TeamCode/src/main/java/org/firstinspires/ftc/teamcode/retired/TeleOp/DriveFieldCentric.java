@@ -30,6 +30,7 @@
 package org.firstinspires.ftc.teamcode.retired.TeleOp;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -60,7 +61,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
  */
 
 @TeleOp(name="Drive: Field Centric", group="Robot")
-//@Disabled
+@Disabled
 public class DriveFieldCentric extends LinearOpMode {
 
     /* Declare OpMode members. */
