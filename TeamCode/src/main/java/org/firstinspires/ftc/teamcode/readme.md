@@ -129,3 +129,56 @@ Note: Some names start with "Team" and others start with "team".  This is intent
 5)  Add:    include ':Team0417' to the "/settings.gradle" file.
     
 6)  Open up Android Studios and clean out any old files by using the menu to "Build/Clean Project""
+
+## FTC Team Robot Code 
+### DECODE<sup>SM</sup> 2025-2026 Season 
+This repository is a fork of the official FIRST Tech Challenge RobotController SDK. It contains the 
+custom OpMode code, configurations, and sensor integrations for teams who have sought assistance. 
+####  Project Goal 
+Our goal is to build a competitive robot for the DECODE<sup>SM</sup> season. This robot will use
+programs in this repository to operate in matches.  
+#### Quick Links 
+
+| File/Directory | Description |
+|----------------|-------------|
+| [TeamCode/src/main/java/org/firstinspires/ftc/teamcode]() | Our custom Java OpModes (teleop and autonomous) reside here | 
+| CONTRIBUTING.md | Guidelines on how we manage our code, naming conventions, and pull request process. | 
+| docs/Wiring-Guide.md | Detailed guide on our robot's physical wiring and control hub port assignments. | 
+| LICENSE | The official Apache License 2.0 inherited from the FTC SDK. | 
+
+#### Getting Started (Setup for Team Members) 
+You should use the latest version of Android Studio to work on this code repository. 
+*  Clone the repository 
+Run the following command in the terminal window: 
+```agsl
+git clone https://https://github.com/baqwas/FtcRobotController 
+```
+* Open in Android Studio 
+  * In Android Studio, select Open an existing Android Studio Project 
+  * Navigate to the folder where you cloned the repository and select the top-level folder (FtcRobotController) 
+  * Allow Android Studio to sync the project. There will be a progress bar on the bottom status bar. 
+* Build and Deploy 
+  * Validate that your development computer is connected to the REV Control Hub preferably by Wi-Fi 
+  * In Android Studio, ensure that the build variant is set to RobotController 
+  * Select the REV Robot Controller as the device from the main menu bar 
+  * Select the Run icon on the main menu bar to compile and deploy your code to the Robot Controller
+### Coding Conventions (for Team developers) 
+Since we are a rookie (for all practical purposes) team learning together, consistency is key! 
+* ** Code Location**: Our custom code (OpModes, classes) must reside under the /TeamCode folder. 
+Do not modify files in any other folder.
+* **Nomenclature**: 
+    * **OpModes**: Use PascalCase and include the type: e.g. `TankDriveTeleOp`, `SimpleAutoOp` 
+    * **Variables**: Use camelCase: e.g. `motorLeftFront`, `targetPosition` 
+* **Comments**: Use comments to explain why the code is doing something, not just what it is doing
+  (e.g., // Set motor to run to position to ensure precise movement` instead of `// set motor to run to position`) 
+* **Hardware Map**: All motor and sensor initialization (the names used in `hardwareMap.get()`) must 
+match the names defined in the shared configuration file.
+### Current Development Goals 
+
+| Component | Status | Owner           | 
+|-----------|--------|-----------------| 
+| Mecanum Drive Train | ✅ Complete | [Team Member 1] | 
+| Intake | 🚧 In Progress | [Team Member 2] | 
+| Launcher | 🚧 In Progress | [Team Member 3] | 
+| Elevator Slide | 💡 Needs Planning | [Team Member 4] | 
+| Basic Autonomous | ⏳ Blocked (Need Launcher Code) | 	[Team Member 5] | 
