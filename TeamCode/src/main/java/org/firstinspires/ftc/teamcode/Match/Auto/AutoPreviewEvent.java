@@ -135,7 +135,7 @@ public class AutoPreviewEvent extends LinearOpMode {
                 position = Position.POS3;
             }
 
-            telemetry.addData("Alliance", "Press B for Blue, X for Red");
+            telemetry.addData("Alliance", "Press B|O for Blue, X|□ for Red");
             telemetry.addData("Position", "Press D-pad Up/Right/Down for POS1/POS2/POS3");
             telemetry.addData("Current Selection", "Alliance: %s, Position: %s", alliance.toString(), position.toString());
             telemetry.update();
