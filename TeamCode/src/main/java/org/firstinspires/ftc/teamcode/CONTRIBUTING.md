@@ -25,11 +25,11 @@ Consistency is key for readability. Please follow these Java conventions in all 
 
 | Element |	Convention | Example                                      | Description | 
 |---------|------------|----------------------------------------------|-------------| 
-| Classes (OpModes, Hardware) | PascalCase | `BasicTeleOp, RobotDriveTrain`               | Capitalize the first letter of every word. | 
-| Methods/Functions | camelCase | `initHardware(), setMotorPower()`            | Start with lowercase, capitalize subsequent words. | 
-| Variables (General) | camelCase | `motorLeftFront1` `sensorDistance`           | Keep variable names descriptive. | 
-| Constants (final) | UPPER_SNAKE_CASE | `DRIVE\_GEAR\_RATIO`, `CLAW\_OPEN\_POSITION` | Use all caps with underscores. | 
-| Hardware Map Names | camelCase | `motorFrontLeft`, `imu`                     | Crucial: These names must exactly match the configuration file on the Control Hub. | 
+| **Classes** (OpModes, Hardware) | PascalCase | `BasicTeleOp, RobotDriveTrain`               | Capitalize the first letter of every word. | 
+| **Methods/Functions** | camelCase | `initHardware(), setMotorPower()`            | Start with lowercase, capitalize subsequent words. | 
+| **Variables** (General) | camelCase | `motorLeftFront1` `sensorDistance`           | Keep variable names descriptive. | 
+| **Constants** (final) | UPPER_SNAKE_CASE | `DRIVE\_GEAR\_RATIO`, `CLAW\_OPEN\_POSITION` | Use all caps with underscores. | 
+| **Hardware Map Names** | camelCase | `motorFrontLeft`, `imu`                     | Crucial: These names must exactly match the configuration file on the Control Hub. | 
 
 3. Pull Request (PR) Process 
 A Pull Request is how your code is reviewed and approved before becoming part of the stable master branch.
@@ -50,9 +50,9 @@ Every Pull Request description should contain the following:
 * Once approved and all required checks (if any) have passed, the PR can be merged by the reviewer or lead programmer. 
 
 4. Documentation and Comments
-* Javadocs: Every custom class and every major method should have a Javadoc comment explaining its purpose, inputs, and outputs. 
-* Inline Comments: Use comments to explain non-obvious logic or to explain why a certain decision was made (e.g., // We use 0.8 power here to prevent motor stalling on the incline.). Avoid commenting code that is self-explanatory. 
-* Update Configuration: If you add or rename any hardware component, you must update the corresponding entry in our physical robot configuration file on the Control Hub and make a note in the PR description.5. 
+* **Javadocs**: Every custom class and every major method should have a Javadoc comment explaining its purpose, inputs, and outputs. 
+* **Inline Comments**: Use comments to explain non-obvious logic or to explain why a certain decision was made (e.g., // We use 0.8 power here to prevent motor stalling on the incline.). Avoid commenting code that is self-explanatory. 
+* **Update Configuration**: If you add or rename any hardware component, you must update the corresponding entry in our physical robot configuration file on the Control Hub and make a note in the PR description.5. 
 
 ### ⚙️ Javadoc Template Example (Class Level) 
 The class Javadoc should introduce the component, state its purpose, and list any hardware or configuration dependencies (which act as the "inputs" for the class itself). 

@@ -61,7 +61,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.Velocity;
  * @link https://youtu.be/DN7KW_fiVR4
  *  */
 @TeleOp(name = "Mecanum: Wheel Spin", group = "Test")
-@Disabled
+//@Disabled
 
 public class MecanumWheelSpin extends LinearOpMode {
 

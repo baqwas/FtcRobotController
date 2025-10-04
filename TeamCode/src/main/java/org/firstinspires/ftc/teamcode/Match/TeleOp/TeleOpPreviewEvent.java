@@ -53,8 +53,8 @@ import java.util.Locale;
 
 /**
  * {@link TeleOpPreviewEvent} is a basic TeleOp OpMode for the DECODE 2025-2026 season.
- * This OpMode implements Field-Centric Mecanum drive and auxiliary controls.
- * Hardware: Artifact Intake (Servo), Launcher (DcMotorEx), End-game Slides (DcMotorEx).
+ * This OpMode implements Field-Centric Mecanum drive and auxiliary controls, including a
+ * quadratic function for fly-by launch velocity calculation.
  */
 @TeleOp(name = "Preview Event TeleOp", group = "Match")
 public class TeleOpPreviewEvent extends LinearOpMode {
@@ -67,11 +67,8 @@ public class TeleOpPreviewEvent extends LinearOpMode {
     private IMU imu = null;
 
     // --- DECODE 2025-2026 AUXILIARY HARDWARE DECLARATIONS ---
-    // Artifact Intake is now a Servo
     private Servo servoIntake = null;
-    // Launcher is now a DcMotorEx
     private DcMotorEx motorLauncher = null;
-    // End-game Slides/Elevation is now a DcMotorEx
     private DcMotorEx motorSlides = null;
 
     // --- VISION DECLARATIONS ---
@@ -82,21 +79,28 @@ public class TeleOpPreviewEvent extends LinearOpMode {
 
     // --- CONTROLS AND STATE ---
     private ElapsedTime runtime = new ElapsedTime();
-    private String selectedAlliance = "RED"; // Default to RED
+    private String selectedAlliance = "RED";
     private boolean aAlreadyPressed = false;
-    private double launcherPower = 0.0; // State variable for the launcher motor
 
     // --- DRIVE CONSTANTS ---
     private final double DRIVE_SPEED = 0.5;
     private final double TURN_SPEED = 0.3;
 
     // --- AUXILIARY CONSTANTS ---
-    // Servo positions for the Artifact Intake
     private final double INTAKE_OPEN_POS = 0.8;
     private final double INTAKE_CLOSED_POS = 0.2;
-    // Launcher Motor power (for a fast, short launch)
-    private final double LAUNCHER_FIRE_POWER = 1.0;
-    private final double SLIDES_MAX_POWER = 0.75; // Limit slides speed for control
+    private final double SLIDES_MAX_POWER = 0.75;
+
+    // --- 🎯 QUADRATIC REGRESSION COEFFICIENTS (FLY-BY LAUNCH) ---
+    // NOTE: REPLACE THESE PLACEHOLDER VALUES WITH THE OUTPUT FROM YOUR PYTHON SCRIPT.
+    // Target Velocity (y) = A * Range^2 + B * Range + C
+    private final double COEFF_A = 0.005;   // Coefficient for Range^2 (x^2)
+    private final double COEFF_B = 5.312;   // Coefficient for Range (x)
+    private final double COEFF_C = 1050.0;  // Coefficient for Intercept (c)
+
+    // State for the launcher
+    private boolean isLauncherSpinning = false;
+    private double desiredVelocity = 0.0;
 
     @Override
     public void runOpMode() {
@@ -116,27 +120,22 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         // --- 2. WAITING FOR START ---
         while (opModeInInit()) {
             handleAllianceSelection();
-            idle(); // Yield time to other system tasks
+            idle();
         }
 
         // --- 3. RUNTIME ---
         runtime.reset();
 
-        // Loop runs until OpMode is stopped
         while (opModeIsActive()) {
-            // Check if Auto-Navigation is running
             if (isAutoNavActive) {
                 runAutoNavigation();
             } else {
-                // If not in AutoNav, run manual Mecanum drive
                 handleMecanumDrive();
                 handleAutoNavActivation();
             }
 
-            // Handle the new auxiliary systems for DECODE
             handleAuxiliarySystems();
 
-            // Final update for Driver Station
             sendTelemetryUpdates();
         }
     }
@@ -150,33 +149,29 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
         motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
-        // Set direction: FTC uses a convention where left motors are typically reversed
         motorLeftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         motorLeftBack.setDirection(DcMotorSimple.Direction.REVERSE);
         motorRightFront.setDirection(DcMotorSimple.Direction.FORWARD);
         motorRightBack.setDirection(DcMotorSimple.Direction.FORWARD);
 
-        // Set modes
         setMotorRunMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         setMotorZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // --- AUXILIARY HARDWARE INITIALIZATION (DECODE 2025-2026) ---
         try {
-            // Artifact Intake (Servo)
             servoIntake = hardwareMap.get(Servo.class, "servoIntake");
-            servoIntake.setPosition(INTAKE_CLOSED_POS); // Start in the closed/safe position
+            servoIntake.setPosition(INTAKE_CLOSED_POS);
 
-            // Launcher (DcMotorEx)
             motorLauncher = hardwareMap.get(DcMotorEx.class, "motorlauncher");
             motorLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
             motorLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-            motorLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // Use RUN_WITHOUT_ENCODER for launching
+            // Launcher mode is initialized to RUN_WITHOUT_ENCODER, but changes in handleAuxiliarySystems
+            motorLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-            // End-game Slides/Elevation (DcMotorEx)
             motorSlides = hardwareMap.get(DcMotorEx.class, "motorSlides");
             motorSlides.setDirection(DcMotorSimple.Direction.FORWARD);
             motorSlides.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-            motorSlides.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // Simple power control for TeleOp
+            motorSlides.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
         } catch (Exception e) {
             telemetry.addData("WARN", "Auxiliary hardware not found. Check config for artifact_intake_servo, launcher_motor, slides_motor.");
@@ -187,21 +182,15 @@ public class TeleOpPreviewEvent extends LinearOpMode {
      * Initializes the IMU (Inertial Measurement Unit) with the robot's orientation.
      */
     private void initializeIMU() {
-        // Retrieve the IMU from the hardware map
         imu = hardwareMap.get(IMU.class, "imu");
 
-        // Configuration based on user input:
-        // RobotController is mounted with the **logo facing forward** and the **USB port facing upward**.
         RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.FORWARD;
         RevHubOrientationOnRobot.UsbFacingDirection usbDirection = RevHubOrientationOnRobot.UsbFacingDirection.UP;
 
-        // Build the orientation configuration
         RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
 
-        // Initialize the IMU with the specified orientation
         imu.initialize(new IMU.Parameters(orientationOnRobot));
 
-        // Reset the Yaw to 0 degrees at the start of the OpMode
         imu.resetYaw();
     }
 
@@ -210,12 +199,10 @@ public class TeleOpPreviewEvent extends LinearOpMode {
      * Initializes the VisionPortal and the AprilTag Processor.
      */
     private void initializeVision() {
-        // Create the AprilTag processor
         aprilTagProcessor = new AprilTagProcessor.Builder()
-                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11) // Standard FTC family
+                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
                 .build();
 
-        // Create the Vision Portal
         visionPortal = new VisionPortal.Builder()
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .addProcessor(aprilTagProcessor)
@@ -244,14 +231,12 @@ public class TeleOpPreviewEvent extends LinearOpMode {
      * Implements standard field-centric Mecanum drive control.
      */
     private void handleMecanumDrive() {
-        double drive = -gamepad1.left_stick_y * DRIVE_SPEED; // Forward/Backward
-        double strafe = gamepad1.left_stick_x * DRIVE_SPEED;  // Strafe Left/Right
-        double turn = gamepad1.right_stick_x * TURN_SPEED;   // Turn Left/Right
+        double drive = -gamepad1.left_stick_y * DRIVE_SPEED;
+        double strafe = gamepad1.left_stick_x * DRIVE_SPEED;
+        double turn = gamepad1.right_stick_x * TURN_SPEED;
 
-        // Get robot's current yaw (heading)
         double botYaw = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
 
-        // Field-centric conversion (rotate the movement vector by the negative angle of the bot's yaw)
         double cosYaw = Math.cos(Math.toRadians(-botYaw));
         double sinYaw = Math.sin(Math.toRadians(-botYaw));
 
@@ -261,7 +246,6 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         drive = tempDrive;
         strafe = tempStrafe;
 
-        // Calculate motor powers
         motorLeftFront.setPower(drive + strafe + turn);
         motorLeftBack.setPower(drive - strafe + turn);
         motorRightFront.setPower(drive - strafe - turn);
@@ -272,7 +256,6 @@ public class TeleOpPreviewEvent extends LinearOpMode {
      * Checks if the operator wants to switch to Auto Navigation mode (AprilTag tracking).
      */
     private void handleAutoNavActivation() {
-        // Example: Press Y to initiate AprilTag tracking toward the target tag
         if (gamepad1.y) {
             isAutoNavActive = true;
         }
@@ -280,13 +263,11 @@ public class TeleOpPreviewEvent extends LinearOpMode {
 
     /**
      * Executes the AprilTag Auto Navigation (simplified Proportional control).
-     * The robot drives toward the target tag (ID 20) until it is close.
      */
     private void runAutoNavigation() {
         AprilTagDetection detection = null;
         List<AprilTagDetection> currentDetections = aprilTagProcessor.getDetections();
 
-        // 1. Find the target tag
         for (AprilTagDetection d : currentDetections) {
             if (d.id == TARGET_TAG_ID) {
                 detection = d;
@@ -300,30 +281,25 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             return;
         }
 
-        // 2. Proportional Control based on detection
-        double Kp_RANGE = 0.05; // Drive forward/backward
-        double Kp_BEARING = 0.02; // Strafe left/right
-        double Kp_YAW = 0.015; // Turn
+        double Kp_RANGE = 0.05;
+        double Kp_BEARING = 0.02;
+        double Kp_YAW = 0.015;
 
-        double targetRange = 10.0; // Target distance in inches from the tag
+        double targetRange = 10.0;
 
-        // Errors
-        double rangeError = detection.ftcPose.range - targetRange; // Distance error
-        double bearingError = detection.ftcPose.bearing; // Strafe error (sideways offset)
-        double yawError = detection.ftcPose.yaw; // Angle error (turning error)
+        double rangeError = detection.ftcPose.range - targetRange;
+        double bearingError = detection.ftcPose.bearing;
+        double yawError = detection.ftcPose.yaw;
 
-        // Drive Powers (P-Control only)
         double rangeDrive = rangeError * Kp_RANGE;
-        double strafeDrive = -bearingError * Kp_BEARING; // Negative bearing to center
-        double turnDrive = -yawError * Kp_YAW; // Negative yaw to straighten
+        double strafeDrive = -bearingError * Kp_BEARING;
+        double turnDrive = -yawError * Kp_YAW;
 
-        // Limit drive powers
         rangeDrive = Math.max(-DRIVE_SPEED, Math.min(rangeDrive, DRIVE_SPEED));
         strafeDrive = Math.max(-DRIVE_SPEED, Math.min(strafeDrive, DRIVE_SPEED));
         turnDrive = Math.max(-TURN_SPEED, Math.min(turnDrive, TURN_SPEED));
 
-        // 3. Apply power if outside tolerance
-        if (Math.abs(rangeError) > 0.5) { // Stop when within 0.5 inches
+        if (Math.abs(rangeError) > 0.5) {
             motorLeftFront.setPower(rangeDrive + strafeDrive + turnDrive);
             motorLeftBack.setPower(rangeDrive - strafeDrive + turnDrive);
             motorRightFront.setPower(rangeDrive + strafeDrive - turnDrive);
@@ -340,18 +316,30 @@ public class TeleOpPreviewEvent extends LinearOpMode {
     }
 
     /**
+     * Finds the target AprilTag (ID 20) and returns its range.
+     * @return The range in inches, or -1.0 if not found (to indicate no valid range).
+     */
+    private double getTargetRange() {
+        List<AprilTagDetection> detections = aprilTagProcessor.getDetections();
+        for (AprilTagDetection detection : detections) {
+            if (detection.id == TARGET_TAG_ID) {
+                // Return the distance (range) to the tag from the camera
+                return detection.ftcPose.range;
+            }
+        }
+        return -1.0; // Sentinel value indicating no tag found
+    }
+
+    /**
      * Handles control logic for auxiliary systems (Intake, Launcher, Slides) using Gamepad 2.
-     * Uses the requested hardware types and control mappings.
+     * Integrates the quadratic equation for launcher velocity.
      */
     private void handleAuxiliarySystems() {
         if (servoIntake == null || motorLauncher == null || motorSlides == null) {
-            // Safety check in case hardware mapping failed
             return;
         }
 
         // --- ARTIFACT INTAKE CONTROL (GAMEPAD 2 BUMPERS) ---
-        // Right Bumper (R1/RB): Open Intake Position (to accept Artifacts)
-        // Left Bumper (L1/LB): Closed Intake Position (to hold/secure Artifacts)
         if (gamepad2.right_bumper) {
             servoIntake.setPosition(INTAKE_OPEN_POS);
         } else if (gamepad2.left_bumper) {
@@ -359,25 +347,50 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         }
 
         // --- END-GAME SLIDES CONTROL (GAMEPAD 2 LEFT STICK Y-AXIS) ---
-        // Left Stick Y controls elevation proportionally.
-        // Y-axis is negated: stick UP (-1.0) should correspond to slides UP (positive power)
         double slidesPower = -gamepad2.left_stick_y;
-
-        // Apply max power limit
         slidesPower = Math.max(-SLIDES_MAX_POWER, Math.min(slidesPower, SLIDES_MAX_POWER));
-
         motorSlides.setPower(slidesPower);
 
 
-        // --- LAUNCHER CONTROL (GAMEPAD 2 Y BUTTON) ---
-        // Y/Triangle button fires the motor launcher at max speed, only while held.
-        if (gamepad2.y) {
-            launcherPower = LAUNCHER_FIRE_POWER; // Set launcher motor to high power
-        } else {
-            launcherPower = 0.0; // Stop motor when button is released
+        // 🚀 --- LAUNCHER CONTROL (FLY-BY VELOCITY) ---
+        double currentRange = getTargetRange();
+
+        // --- Gamepad 2 A: Activate Auto-Launch Mode (Spin Up) ---
+        if (gamepad2.a) {
+            if (currentRange > 0.0) {
+                // 1. CALCULATE DESIRED VELOCITY USING QUADRATIC EQUATION: V = A*R^2 + B*R + C
+                // R = currentRange, V = desiredVelocity
+                desiredVelocity =
+                        (COEFF_A * currentRange * currentRange) +
+                                (COEFF_B * currentRange) +
+                                COEFF_C;
+
+                // 2. Set motor to RUN_USING_ENCODER for velocity control
+                if (motorLauncher.getMode() != DcMotor.RunMode.RUN_USING_ENCODER) {
+                    motorLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                }
+
+                // 3. Set the calculated velocity
+                motorLauncher.setVelocity(desiredVelocity);
+                isLauncherSpinning = true;
+            } else {
+                // Tag is not found: stop the motor and wait
+                motorLauncher.setVelocity(0.0);
+                isLauncherSpinning = false;
+            }
+        }
+        // --- Gamepad 2 B: Stop Launcher ---
+        else if (gamepad2.b) {
+            motorLauncher.setVelocity(0.0);
+            isLauncherSpinning = false;
+            // Optionally, switch back to power mode if needed elsewhere,
+            // but keeping it in ENCODER mode is safer for flywheels.
+            // motorLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
 
-        motorLauncher.setPower(launcherPower);
+        // Gamepad 2 Y/Triangle could be used to FIRE the artifact once target velocity is reached
+        // This requires additional logic (like a gate servo or timing) not specified here.
+        // For now, only the velocity setting logic is implemented.
     }
 
     /**
@@ -428,12 +441,20 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         telemetry.addData("AutoNav", isAutoNavActive ? "ACTIVE (Tracking Tag " + TARGET_TAG_ID + ")" : "MANUAL");
 
         // DECODE AUXILIARY SYSTEM TELEMETRY
-        // Fixed: Use getPosition() for Servo, not getPower()
         telemetry.addData("Intake Servo Pos", servoIntake != null ? servoIntake.getPosition() : "N/A");
 
-        // Fixed: Ensure the correct motor objects are checked/used for power
-        telemetry.addData("Launcher Power", motorLauncher != null ? motorLauncher.getPower() : "N/A");
+        // Update Launcher Telemetry for Velocity Control
+        if (motorLauncher != null) {
+            if (isLauncherSpinning) {
+                telemetry.addData("Launcher Status", "Spinning @ %.0f (Actual: %.0f)", desiredVelocity, motorLauncher.getVelocity());
+                telemetry.addData("Range Used", "%.2f in", getTargetRange() > 0 ? getTargetRange() : 0.0);
+            } else {
+                telemetry.addData("Launcher Status", "Stopped");
+            }
+        }
+
         telemetry.addData("Slides Power", motorSlides != null ? motorSlides.getPower() : "N/A");
+        telemetry.addData("Controls", "A=Auto-Vel | B=Stop Vel");
 
         telemetry.update();
     }

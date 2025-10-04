@@ -24,12 +24,13 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-
+// **REPLACED BNO055IMU IMPORT**
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// import com.qualcomm.hardware.bosch.BNO055IMU; // REMOVED BNO055 IMPORT
 
 @Autonomous(name = "Mecanum Kalman", group = "Autonomous")
 @Disabled
@@ -60,7 +61,9 @@ public class MecanumKalman extends LinearOpMode {
         DcMotorEx odometryLeft = hardwareMap.get(DcMotorEx.class, "odometryLeft");
         DcMotorEx odometryRight = hardwareMap.get(DcMotorEx.class, "odometryRight");
         DcMotorEx odometryStrafe = hardwareMap.get(DcMotorEx.class, "odometryStrafe");
-        BNO055IMU imu = hardwareMap.get(BNO055IMU.class, "imu");
+
+        // **CHANGE 1 & 2: Change variable type and hardware map retrieval to use IMU interface**
+        IMU imu = hardwareMap.get(IMU.class, "imu");
 
         // Set odometry motor modes
         odometryLeft.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
@@ -70,7 +73,7 @@ public class MecanumKalman extends LinearOpMode {
         odometryRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         odometryStrafe.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
 
-        // Initialize odometry system with IMU
+        // Initialize odometry system with IMU (constructor now expects IMU)
         odometry = new OdometryKalman(odometryLeft, odometryRight, odometryStrafe, imu);
 
         telemetry.addData("Status", "Hardware Initialized. Waiting for start.");

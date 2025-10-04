@@ -100,25 +100,24 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
 import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 @TeleOp(name = "Mecanum: Spin Direction", group = "Test")
-@Disabled
+// @Disabled
 
 public class MecanumSpinDirection extends LinearOpMode {
 
@@ -126,9 +125,8 @@ public class MecanumSpinDirection extends LinearOpMode {
     Datalog datalog = new Datalog(TAG); // data logging for offline analysis/debugging
 
     static final double TICKS_PER_INCH = 56.9887969189608; // REV Robotics motor and wheel specific!
-    TouchSensor touch;
-    BNO055IMU imu;
-    Orientation lastAngles = new Orientation();
+    private IMU imu;
+    YawPitchRollAngles lastAngles;
     double globalAngle, power = .40, correction;
     boolean aButton, bButton, touched;
     private final ElapsedTime runtime = new ElapsedTime();
@@ -154,7 +152,7 @@ public class MecanumSpinDirection extends LinearOpMode {
         {
             correction = checkDirection();  // Use gyro to drive in a straight line.
 
-            telemetry.addData("1 IMU heading", lastAngles.firstAngle);
+            telemetry.addData("1 IMU heading", lastAngles.getYaw(AngleUnit.DEGREES));
             telemetry.addData("2 Global heading", globalAngle);
             telemetry.addData("3 Correction", correction);
             telemetry.update();
@@ -226,36 +224,35 @@ public class MecanumSpinDirection extends LinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException   // called when init button is  pressed.
     {
-        int motorNumber = 0;
         // default condition but play it safe anyway
         for (DcMotorEx dcMotor : motor) {
             dcMotor.setPower(0.0); // setting a power level of zero will brake the motor
             dcMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE); // stops and then brakes, actively resisting any external force which attempts to turn the motor
             dcMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // apply a particular power level to the motor
         }
-        //touch = hardwareMap.touchSensor.get("sensorTouch");        // get a reference to touch sensor.
+        // 1. Get the IMU from the hardware map
+        imu = hardwareMap.get(IMU.class, "imu"); // "imu" is the default device name
 
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.mode = BNO055IMU.SensorMode.NDOF;
-        parameters.angleUnit = BNO055IMU.AngleUnit.DEGREES;
-        parameters.accelUnit = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        parameters.loggingEnabled = false;
-        imu = hardwareMap.get(BNO055IMU.class, "imuGyro");        // Retrieve and initialize the IMU
+        // 2. Define the Hub's orientation on the robot
+        // The values below assume the REV logo is facing UP and the USB ports are FORWARD.
+        RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
+        RevHubOrientationOnRobot.UsbFacingDirection usbDirection = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+
+        RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
+
+        // 3. Set the parameters and initialize the IMU
+        IMU.Parameters parameters = new IMU.Parameters(orientationOnRobot);
         imu.initialize(parameters);
 
-        double travelLength = 24.0;     // 12" linear
+        // 4. Optionally, reset the Yaw angle to 0 for a consistent start
+        imu.resetYaw();
 
-        telemetry.addData("Mode", "Calibrating...");
+        telemetry.addData("Status", "IMU Initialized and Yaw Reset");
         telemetry.update();
 
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // make sure the imu gyro is calibrated before continuing.
-        {
-            sleep(50);
-            idle();
-        }
+        imu.initialize(parameters);
 
-        telemetry.addData("Mode", "Select Start");
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+        telemetry.addData("Mode", "Calibrating...");
         telemetry.update();
 
         waitForStart();                     // wait for Start button to be pressed for Linear OpMode
@@ -294,11 +291,24 @@ public class MecanumSpinDirection extends LinearOpMode {
                 motor[i].setPower(motorPower[i]);
             }
 
-            lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+            // Get the robot's orientation
+            YawPitchRollAngles robotOrientation = imu.getRobotYawPitchRollAngles();
+
+            // Extract the angles (most teams only care about Yaw/Heading)
+            double yawAngle = robotOrientation.getYaw(AngleUnit.DEGREES);
+            double pitchAngle = robotOrientation.getPitch(AngleUnit.DEGREES);
+            double rollAngle = robotOrientation.getRoll(AngleUnit.DEGREES);
+
+            // Report the angles to the Driver Station
+            telemetry.addData("Yaw (Heading)", "%.2f Deg", yawAngle);
+            telemetry.addData("Pitch", "%.2f Deg", pitchAngle);
+            telemetry.addData("Roll", "%.2f Deg", rollAngle);
+            telemetry.addData("Status", "Running");
+            telemetry.update();
             datalog.loopCounter.set(drivetrainSteps++);
-            datalog.yaw.set(lastAngles.firstAngle);
-            datalog.pitch.set(lastAngles.secondAngle);
-            datalog.roll.set(lastAngles.thirdAngle);
+            datalog.yaw.set(lastAngles.getYaw(AngleUnit.DEGREES));
+            datalog.pitch.set(lastAngles.getPitch(AngleUnit.DEGREES));
+            datalog.roll.set(lastAngles.getRoll(AngleUnit.DEGREES));
             datalog.roll.set(globalAngle);
             datalog.writeLine();            // A timestamp is applied to the record when writing
         }
@@ -308,7 +318,7 @@ public class MecanumSpinDirection extends LinearOpMode {
      * Resets the cumulative angle tracking to zero and initializes the lastAngles entity
      */
     private void resetAngle() {
-        lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+        lastAngles = imu.getRobotYawPitchRollAngles();
 
         globalAngle = 0;
     }
@@ -324,9 +334,9 @@ public class MecanumSpinDirection extends LinearOpMode {
         // returned as 0 to +180 or 0 to -180 rolling back to -179 or +179 when rotation passes
         // 180 degrees. We detect this transition and track the total cumulative angle of rotation.
 
-        Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+        YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
 
-        double deltaAngle = angles.firstAngle - lastAngles.firstAngle;
+        double deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
 
         if (deltaAngle < -180)
             deltaAngle += 360;

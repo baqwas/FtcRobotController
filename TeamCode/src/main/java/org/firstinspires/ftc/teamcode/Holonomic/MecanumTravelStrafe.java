@@ -47,13 +47,13 @@
  * </p>
  * <p>
  * forward travel:
- *       ^                   ^
- *       |                   |
- *       0 left front        2 right front
- *                 X
- *       ^                   ^
- *       |                   |
- *       1 left back         3 right back
+ * ^                   ^
+ * |                   |
+ * 0 left front        2 right front
+ * X
+ * ^                   ^
+ * |                   |
+ * 1 left back         3 right back
  *
  * hard coded numbers to avoid the use of enum construct for such a simple program
  * motor positions:
@@ -74,16 +74,25 @@
  *
  * @see https://docs.revrobotics.com/rev-control-system/sensors/encoders/motor-based-encoders
  * HD Hex Motor (REV-41-1291) Encoder Specifications
- *      HD Hex Motor Reduction                  Bare Motor      40:1            20:1
- *      Free speed, RPM                         6,000           150             300
- *      Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
- *      Ticks per rotation of output shaft      28              1120            560
+ * HD Hex Motor Reduction                  Bare Motor      40:1            20:1
+ * Free speed, RPM                         6,000           150             300
+ * Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
+ * Ticks per rotation of output shaft      28              1120            560
  * TICKS_PER_MOTOR_REV = 560            REV HD Hex UltraPlanetary 20:1 cartridge
  * DRIVE_GEAR_REDUCTION = 1.0
  * WHEEL_DIAMETER_MM = 75.0             REV Mecanum wheel
  * MM_TO_INCH = 0.03937008
  * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
- *                = 56.9887969189608
+ * = 56.9887969189608
+ * 4	Quadrature (Hall Effect)
+ * 7	Cycles per revolution
+ * 28	Ticks per motor internal shaft
+ * 12.7	Gear ratio
+ * 355.6	Motor shaft ticks
+ * 86	Wheel diameter, mm
+ * 270.176968208722	Wheel circumference, mm
+ * 10.6368885121544	Wheel circumference, inches
+ * 33.4308289114498	ticks/inch
  * <p>
  * Hardware map
  * Device name      Control Hub setting
@@ -100,7 +109,7 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.bosch.JustLoggingAccelerationIntegrator;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -108,11 +117,13 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.hardware.IMU; // Import Universal IMU
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
 import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles; // For Universal IMU angle retrieval
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
@@ -124,12 +135,15 @@ public class MecanumTravelStrafe extends LinearOpMode
     private static final  String TAG = MecanumTravelStrafe.class.getSimpleName(); // for use in logging
     Datalog datalog = new Datalog(TAG);
     //static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
-    static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 19.2:1 Motor 96mm Mecanum wheel
+    // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 19.2:1 Motor 96mm Mecanum wheel
+    static final double     TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 12.7:1 Motor 86mm Mecanum wheel
 
     TouchSensor             touch;
-    BNO055IMU               imu;
-    Orientation             globalAngles = new Orientation(); // to retain initial heading values for strafing ajustments
-    Orientation             lastAngles = new Orientation();
+    // BNO055IMU imu; // Old BNO055 declaration
+    IMU                     imu; // Universal IMU declaration
+    Orientation             globalAngles = new Orientation(); // This Orientation object can be kept, but for Universal IMU we'll use YawPitchRollAngles
+    YawPitchRollAngles      robotOrientation; // New object for Universal IMU angles
+    // Orientation lastAngles = new Orientation(); // This can be removed or repurposed
     double                  globalAngle, initialPower = 0.40, correction;
     boolean                 aButton, bButton, touched;
     private final ElapsedTime runtime = new ElapsedTime();
@@ -186,10 +200,10 @@ public class MecanumTravelStrafe extends LinearOpMode
      * @param radians the angle to be normalized
      * @return normalized angle in radians
      * usage: Math.toDegrees(angleWrap(Math.toRadians(359 - 1)))
-     *      359 - 1 = 358
-     *      358 > 180
-     *      358 - 360 = -2
-     *      corrected angle is = -2
+     * 359 - 1 = 358
+     * 358 > 180
+     * 358 - 360 = -2
+     * corrected angle is = -2
      */
     public double angleWrap(double radians)
     {
@@ -255,8 +269,14 @@ public class MecanumTravelStrafe extends LinearOpMode
             }
             ticksError = ((double) (travelTicks - ((motorTicks[0] + motorTicks[3]) - (motorTicks[1] + motorTicks[2])) / 2)) * ticksKp;
             //lateral = lateral * ticksError / travelTicks;
-            lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
-            yawError = (globalAngle - lastAngles.firstAngle) * yawKp;
+
+            // Update IMU angle retrieval for Universal IMU
+            robotOrientation = imu.getRobotYawPitchRollAngles();
+            double currentYaw = robotOrientation.getYaw(AngleUnit.DEGREES);
+
+            // lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES); // Old BNO055 call
+            // yawError = (globalAngle - lastAngles.firstAngle) * yawKp; // Old BNO055 calculation
+            yawError = (globalAngle - currentYaw) * yawKp; // Universal IMU calculation
             correction = ticksError;// + yawError;
             double denominator = Math.max(Math.abs(lateral) /*+ Math.abs(pitch)*/ + Math.abs(correction), 1);
             if (right) {
@@ -277,11 +297,11 @@ public class MecanumTravelStrafe extends LinearOpMode
                 {
                     motor[i].setPower(motorPower[i]);
                 }
-                datalog.yaw.set(yaw);
+                datalog.yaw.set(currentYaw); // Use the current Yaw from Universal IMU
                 datalog.pitch.set(pitch);
                 datalog.roll.set(lateral);
                 datalog.globalAngle.set(globalAngle);
-                datalog.lastAngle.set(lastAngles.firstAngle);
+                datalog.lastAngle.set(currentYaw); // Use the current Yaw for the 'lastAngle' log field
                 datalog.ticksKp.set(ticksKp);
                 datalog.yawKp.set(yawKp);
                 datalog.ticksError.set(ticksError);
@@ -336,29 +356,40 @@ public class MecanumTravelStrafe extends LinearOpMode
         }
         //touch = hardwareMap.touchSensor.get("sensorTouch");        // get a reference to touch sensor.
 
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.mode                = BNO055IMU.SensorMode.NDOF; // Fusion of all 3 sensors with FMC enabled; incomplete figure 8 pattern will calibrate magnetometer
-        parameters.angleUnit           = BNO055IMU.AngleUnit.DEGREES; // | RADIANS
-        parameters.accelUnit           = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC; // | MILLI_EARTH_GRAVITY
-        parameters.loggingEnabled      = false;                     // debugging aid: enable logging for this device?
-        imu = hardwareMap.get(BNO055IMU.class, "imu");   // Retrieve and initialize the IMU
-        imu.initialize(parameters);     // Initialize the sensor using the indicated set of parameters
-        // The execution of this method can take a fairly long while,
-        // possibly several tens of milliseconds
+        // Universal IMU Initialization
+        /*
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                // You can add more parameters here if needed, such as
+                .setAccelerationIntegrationAlgorithm(new JustLoggingAccelerationIntegrator())
+                // Set the angle unit for all angle methods (e.g., imu.getRobotYawPitchRollAngles())
+                .setAngleUnit(IMU.AngleUnit.DEGREES)
+                .build();
+        */
+        imu = hardwareMap.get(IMU.class, "imu"); // Retrieve and initialize the IMU (Universal IMU)
+        // imu.initialize(parameters);
+
         double travelLength = 0.0;     // 12" linear, will parametrically evaluate other lengths too!
         double deltaTravel = 12.0;
 
-        telemetry.addData("Mode", "Calibrating...");
+        telemetry.addData("Mode", "Initializing IMU...");
         telemetry.update();
 
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // make sure the imu gyro is calibrated before continuing.
-        {
-            sleep(50);                  // calibration time does not exceed ~3 secs in practice
-            idle();
-        }
+        // The BNO055 'isGyroCalibrated()' check is removed for the Universal IMU.
+        // It's generally ready immediately or initialization handles the wait.
+        // We will reset the Yaw angle to establish the starting heading.
+
+        // while (!isStopRequested() && !imu.isGyroCalibrated())        // Old BNO055 calibration check
+        // {
+        //     sleep(50);                  // calibration time does not exceed ~3 secs in practice
+        //     idle();
+        // }
+
+        // Reset yaw to zero out the starting heading
+        imu.resetYaw();
 
 
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+        // telemetry.addData("Calibration status", imu.getCalibrationStatus().toString()); // Removed, not applicable to all Universal IMUs
+        telemetry.addData("IMU Status", "Yaw Reset");
         telemetry.addData("Wheels", "goBILDA Mecanum 96mm");
         telemetry.addData("Start", "Press PLAY");
         telemetry.update();
@@ -367,8 +398,10 @@ public class MecanumTravelStrafe extends LinearOpMode
 
         telemetry.addData("Mode", "strafing...");
         telemetry.update();
-        globalAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
-        globalAngle = globalAngles.firstAngle;
+
+        // Set the globalAngle after START, using the Universal IMU method
+        robotOrientation = imu.getRobotYawPitchRollAngles();
+        globalAngle = robotOrientation.getYaw(AngleUnit.DEGREES);
 
         for (int i = 0; i < 3; i++) {
             travelLength += deltaTravel;

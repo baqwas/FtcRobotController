@@ -24,19 +24,21 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.IMU.Parameters;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+
+// **REMOVED BNO055 NAVIGATION IMPORTS**
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles; // For retrieving angles from IMU
 
 public class OdometryKalman {
 
     private final DcMotorEx leftEncoder;
     private final DcMotorEx rightEncoder;
     private final DcMotorEx strafeEncoder;
-    private final BNO055IMU imu;
+
+    private final IMU imu;    // **USING UNIVERSAL IMU INTERFACE**
 
     private int lastLeftPos, lastRightPos, lastStrafePos;
 
@@ -50,16 +52,28 @@ public class OdometryKalman {
     private double filteredX, filteredY, filteredTheta;
     private double P_theta; // Variance of our heading estimate
 
-    public OdometryKalman(DcMotorEx leftEncoder, DcMotorEx rightEncoder, DcMotorEx strafeEncoder, BNO055IMU imu) {
+    // **CONSTRUCTOR ACCEPTS IMU INTERFACE**
+    public OdometryKalman(DcMotorEx leftEncoder, DcMotorEx rightEncoder, DcMotorEx strafeEncoder, IMU imu) {
         this.leftEncoder = leftEncoder;
         this.rightEncoder = rightEncoder;
         this.strafeEncoder = strafeEncoder;
         this.imu = imu;
+        /**
+        // **CORRECTED IMU Initialization using the Builder Pattern**
+        // The error likely occurred here if the SDK was outdated or the import was missing.
+        // We use IMU.Parameters.Builder() and explicitly set the angle unit to RADIANS
+        // since the odometry code expects it.
+        com.qualcomm.robotcore.hardware.IMU.Parameters imuParameters =
+                new com.qualcomm.robotcore.hardware.IMU.Parameters.Builder()
+                .setAngleUnit(com.qualcomm.robotcore.hardware.IMU.AngleUnit.RADIANS)
+                // If you are using an older SDK, you MUST update it to
+                // fix the "Cannot resolve symbol 'Builder'" error.
+                .build();
 
-        // Initialize IMU parameters
-        BNO055IMU.Parameters imuParameters = new BNO055IMU.Parameters();
-        imuParameters.angleUnit = BNO055IMU.AngleUnit.RADIANS;
         imu.initialize(imuParameters);
+         */
+        // Explicitly call resetYaw() to set the starting heading to zero.
+        imu.resetYaw();
 
         // Initialize state
         double x = 0;
@@ -126,9 +140,9 @@ public class OdometryKalman {
         P_theta += q_HEADING;
 
         // --- UPDATE STEP (using IMU measurement) ---
-        // Get the measured heading of the IMU
-        Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.RADIANS);
-        double measuredTheta = angles.firstAngle;
+        // **USE getRobotYawPitchRollAngles for Universal IMU**
+        YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+        double measuredTheta = angles.getYaw(AngleUnit.RADIANS); // Use getYaw()
 
         // Calculate Kalman Gain (K)
         // Measurement noise: how much we trust our sensor (IMU)

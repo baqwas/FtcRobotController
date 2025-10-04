@@ -51,22 +51,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * The ElapsedTime class provides a simple handy timer to measure elapsed time intervals.
- * The timer does not provide events or callbacks, as some other timers do.
- * Rather, at an application- determined juncture, one can reset() the timer.
- * Thereafter, one can query the interval of wall-clock time that has subsequently elapsed
- * by calling the time(), seconds(), or milliseconds() methods.
- * The timer has nanosecond internal accuracy.
- * The precision reported by the time() method is either seconds or milliseconds, depending on how the timer is initially constructed.
- * This class is thread-safe.
- * https://ftctechnh.github.io/ftc_app/doc/javadoc/com/qualcomm/robotcore/util/ElapsedTime.html
- * https://first-tech-challenge.github.io/SkyStone/org/firstinspires/ftc/robotcore/external/tfod/TFObjectDetector.html
- */
-
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// **REPLACED BNO055IMU with IMU**
+import com.qualcomm.robotcore.hardware.IMU;
+// Removed: import com.qualcomm.hardware.bosch.BNO055IMU;
+
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -75,6 +65,8 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 /**
  * This 2022-2023 OpMode illustrates the basics of using the TensorFlow Object Detection API to
@@ -90,7 +82,9 @@ public class StrafeTests extends LinearOpMode {
     // Declare OpMode members
     private final ElapsedTime strafeTime = new ElapsedTime();
 
-    BNO055IMU imu;
+    // **CHANGED TYPE TO IMU**
+    IMU imu;
+
     // motor entities for drivetrain
     String[] motorLabels = {
             "motorLeftFront",           // port 0 Control Hub
@@ -120,19 +114,21 @@ public class StrafeTests extends LinearOpMode {
             runTime = 2200;
         }
 
-        double initHeading = -imu.getAngularOrientation().firstAngle;
+        // **UPDATED: Use YawPitchRollAngles and getYaw() for heading**
+        double initHeading = -imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
 
         strafeTime.reset();
 
         while (opModeIsActive() && !isStopRequested() && strafeTime.seconds() < runTime) {
 
-            double currentHeading = -imu.getAngularOrientation().firstAngle;            // Read inverse IMU heading, as the IMU heading is CW positive
+            // **UPDATED: Use YawPitchRollAngles and getYaw() for current heading**
+            double currentHeading = -imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
             double botHeading = currentHeading - initHeading;
 
             rx = -botHeading * 0.1;
 
-            double rotX = x * Math.cos(botHeading) - y * Math.sin(botHeading);
-            double rotY = x * Math.sin(botHeading) + y * Math.cos(botHeading);
+            double rotX = x * Math.cos(Math.toRadians(botHeading)) - y * Math.sin(Math.toRadians(botHeading));
+            double rotY = x * Math.sin(Math.toRadians(botHeading)) + y * Math.cos(Math.toRadians(botHeading));
 
             // Denominator is the largest motor power (absolute value) or 1
             // This ensures all the powers maintain the same ratio, but only when
@@ -205,33 +201,27 @@ public class StrafeTests extends LinearOpMode {
         motor[2].setDirection(DcMotorEx.Direction.REVERSE); // motorRightFront
         motor[3].setDirection(DcMotorEx.Direction.REVERSE); // motorRightBack
 
-        /* Initialize the hardware variables. Note that the strings used here as parameters
-         * to 'get' must correspond to the names assigned during the robot configuration
-         * step (using the FTC Robot Controller app on the phone).
-         * Moon Mechanics nomenclature options for motors:
-         * <device><port|starboard>|<stern/aft>
-         * <role><qualifier>
-         */
-
         telemetry.addData("Mode", "Calibrating...");
         telemetry.update();
+        /*
+        // **UPDATED: Universal IMU Initialization**
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                // The Universal IMU defaults to SensorMode.NDOF, so this is handled implicitly.
+                .setAngleUnit(IMU.AngleUnit.DEGREES) // AngleUnit is now IMU.AngleUnit
+                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC) // AccelUnit is now IMU.AccelUnit
+                // loggingEnabled is not a property of the new Parameters object
+                .build();
 
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.mode                = BNO055IMU.SensorMode.NDOF;
-        parameters.angleUnit           = BNO055IMU.AngleUnit.DEGREES;
-        parameters.accelUnit           = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        parameters.loggingEnabled      = false;
-        imu = hardwareMap.get(BNO055IMU.class, "imu");        // Retrieve and initialize the IMU
+        // **UPDATED: Hardware map retrieval to use IMU interface**
+        imu = hardwareMap.get(IMU.class, "imu");
         imu.initialize(parameters);
+         */
+        // **ADDED: Explicitly reset yaw to zero the heading**
+        imu.resetYaw();
 
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // make sure the imu gyro is calibrated before continuing.
-        {
-            sleep(50);
-            idle();
-        }
-
-        telemetry.addData("Mode", "Select Start");
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+          telemetry.addData("Mode", "Select Start");
+        // Removed imu.getCalibrationStatus() as it is not a part of the Universal IMU API
+        telemetry.addData("Status", "IMU System Set");
         telemetry.addData("Start", "Select PLAY");
         telemetry.update();
         // Driver expected to press PLAY after announcer blasts 3-2-1-GO

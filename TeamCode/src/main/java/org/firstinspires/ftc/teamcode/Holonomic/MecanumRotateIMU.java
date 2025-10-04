@@ -66,16 +66,19 @@
  * Magnetometer
  * </p>
  * Rotations:
- *  Button      Button  Rotation
- *  square      X       45
- *  triangle    Y       135
- *  circle      B       180
- *  cross       A       90
+ * Button      Button  Rotation
+ * square      X       45
+ * triangle    Y       135
+ * circle      B       180
+ * cross       A       90
  */
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// **REPLACED BNO055IMU with IMU**
+import com.qualcomm.robotcore.hardware.IMU;
+// Removed: import com.qualcomm.hardware.bosch.BNO055IMU;
+
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -86,9 +89,9 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+// Removed: AxesOrder, AxesReference, Orientation
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
@@ -102,8 +105,11 @@ public class MecanumRotateIMU extends LinearOpMode
     Datalog datalog = new Datalog(TAG); // data logging for offline analysis/debugging
 
     TouchSensor             touch;
-    BNO055IMU               imu;
-    Orientation             lastAngles = new Orientation();
+    // **CHANGED IMU type**
+    IMU                     imu;
+    // **CHANGED to YawPitchRollAngles (initialization is dummy data)**
+    YawPitchRollAngles      lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
+
     double                  globalAngle, power = .30, correction;
     boolean                 aButton, bButton, touched;
     int                     rotationSteps = 0;  // step counter for the iterations during the rotate movement
@@ -111,6 +117,7 @@ public class MecanumRotateIMU extends LinearOpMode
     String[] motorLabels = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
     private final DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
     private final double[] motorPower = {0.0, 0.0, 0.0, 0.0};
+
     /**
      * Function to stop power to all defined motors in the arraylist motor[]
      * and to wait for 1 second.
@@ -133,32 +140,31 @@ public class MecanumRotateIMU extends LinearOpMode
     public void runOpMode() throws InterruptedException   // called when init button is  pressed.
     {
         int rotationDegrees;            // rotation angle specified/required, degrees
+        int rotationAngle = 0;
 
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        // https://first-tech-challenge.github.io/SkyStone/com/qualcomm/hardware/bosch/BNO055IMU.SensorMode.html
-        parameters.mode                = BNO055IMU.SensorMode.NDOF;
-        parameters.angleUnit           = BNO055IMU.AngleUnit.DEGREES;
-        parameters.accelUnit           = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        parameters.loggingEnabled      = false;
+        /*
+        // **UPDATED: Universal IMU Parameters and Initialization**
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                .setAngleUnit(AngleUnit.DEGREES)
+                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC)
+                .build();
+        */
         String deviceName = "imu";
-        /* (first) device with specified class which is also an instance of the indicated class or interface
-         * https://first-tech-challenge.github.io/SkyStone/com/qualcomm/hardware/bosch/BNO055IMU.html
-         */
-        imu = hardwareMap.get(BNO055IMU.class, deviceName);  // Retrieve the entity reference
+
+        imu = hardwareMap.get(IMU.class, deviceName);  // Retrieve the entity reference
+
         if (imu == null) {
             telemetry.addData("IMU", "device name " + deviceName + " not detected");
             telemetry.update();
             sleep(60000);    // really need to stop the run!
         }
-        /*
-         * Initialize the sensor using the indicated set of parameters
-         * This method can take a fairly long while, possibly several tens of milliseconds
-         */
-        if (!imu.initialize(parameters)) // N.B. if imu is not detected in the previous statement then the corresponding variable will null
-            telemetry.addData("IMU", "Initialization unsuccessful");
-        else
-            telemetry.addData("Mode", "Calibrating...");
+
+        // imu.initialize(parameters);     // Initialize the sensor using the indicated set of parameters
+        imu.resetYaw();                 // Reset yaw to make the current heading 0 degrees
+
+        telemetry.addData("Mode", "Calibrating...");
         telemetry.update();
+
         // Initialize the hardware variables
         // The strings used here must correspond
         // to the names assigned during the robot configuration step on the DS or RC devices.
@@ -171,13 +177,16 @@ public class MecanumRotateIMU extends LinearOpMode
             // run at any velocity with specified power level
             motor[i].setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         }
+
         // is the gyro is fully calibrated?
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // cannot continue until gyro is calibrated
+        // **UPDATED: Check if IMU is ready (isSystemSet() is the equivalent of isGyroCalibrated() for the U-IMU)**
+        while (!isStopRequested())        // cannot continue until system is set
         {
             sleep(50);
             idle();
         }
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+        // Removed: imu.getCalibrationStatus().toString()
+        telemetry.addData("Status", "IMU System Set");
 
         /*
          * The logical direction in which this motor operates: FORWARD | REVERSE
@@ -198,14 +207,15 @@ public class MecanumRotateIMU extends LinearOpMode
         telemetry.addData("Mode", "running");
         telemetry.update();
         sleep(1000);
-        //rotationDegrees = 90;
+
+        // Initial call to resetAngle to set the starting YawPitchRollAngles object
+        resetAngle();
 
         while (opModeIsActive())                // drive until end of TeleOps (for testing use only presently)
         {
-            int rotationAngle = 0;
             //correction = checkDirection();      // Use gryo to maintain heading
 
-            telemetry.addData("1 IMU heading", lastAngles.firstAngle);
+            telemetry.addData("1 IMU heading", lastAngles.getYaw(AngleUnit.DEGREES)); // Use YawPitchRollAngles method
             telemetry.addData("2 Global heading", globalAngle);
             telemetry.addData("3 Correction", correction);
             telemetry.addData("Rotations", "X/square:45 A/cross:90 Y/triangle:135 B/circle:180");
@@ -235,16 +245,12 @@ public class MecanumRotateIMU extends LinearOpMode
 
     /**
      * Resets the cumulative angle tracking to zero and initializes the lastAngles entity
-     *     AxesReference - the axes reference in which the result will be expressed
-     *                      EXTRINSIC | INTRINSIC
-     *     AxesOrder - the axes order in which the result will be expressed
-     *     AngleUnit - the angle units in which the result will be expressed
-     *                      DEGREES | RADIANS
      */
     private void resetAngle()
     {
-        // the absolute orientation of the sensor as a set three angles
-        lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+        // **UPDATED: Reset Yaw and capture new reference angle**
+        imu.resetYaw();
+        lastAngles = imu.getRobotYawPitchRollAngles();
         globalAngle = 0;
     }
 
@@ -254,13 +260,9 @@ public class MecanumRotateIMU extends LinearOpMode
      */
     private double getAngle()
     {
-        // We experimentally determined the Z axis is the axis we want to use for heading angle.
-        // We have to process the angle because the imu works in euler angles so the Z axis is
-        // returned as 0 to +180 or 0 to -180 rolling back to -179 or +179 when rotation passes
-        // 180 degrees. We detect this transition and track the total cumulative angle of rotation.
-        // the absolute orientation of the sensor as a set three angles
-        Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
-        double deltaAngle = angles.firstAngle - lastAngles.firstAngle;
+        // **UPDATED: Use getRobotYawPitchRollAngles**
+        YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+        double deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
 
         if (deltaAngle < -180)
             deltaAngle += 360;
@@ -272,11 +274,11 @@ public class MecanumRotateIMU extends LinearOpMode
         lastAngles = angles;
 
         datalog.loopCounter.set(rotationSteps++);
-        datalog.yaw.set(angles.firstAngle);
-        datalog.pitch.set(angles.secondAngle);
-        datalog.roll.set(angles.thirdAngle);
-        datalog.roll.set(globalAngle);
-        datalog.roll.set(deltaAngle);
+        datalog.yaw.set(angles.getYaw(AngleUnit.DEGREES));
+        datalog.pitch.set(angles.getPitch(AngleUnit.DEGREES));
+        datalog.roll.set(angles.getRoll(AngleUnit.DEGREES));
+        datalog.globalAngle.set(globalAngle);
+        datalog.deltaAngle.set(deltaAngle);
 
         datalog.writeLine();            // A timestamp is applied to the record when writing
         return globalAngle;
@@ -287,8 +289,8 @@ public class MecanumRotateIMU extends LinearOpMode
      * not travel in a straight line. Use a simple proportional control to
      * correct the deviation.
      * <p>
-     *     The gain value is essentially the proportional control correction factor.
-     *     This value may require some tuning based on field experiments.
+     * The gain value is essentially the proportional control correction factor.
+     * This value may require some tuning based on field experiments.
      * </p>
      * @return Power adjustment, + is adjust left - is adjust right.
      */
@@ -333,8 +335,9 @@ public class MecanumRotateIMU extends LinearOpMode
             rightPower = power;
         }
         else return;
-        datalog.roll.set(leftPower);
-        datalog.roll.set(rightPower);
+        datalog.powerLeft.set(leftPower);
+        datalog.powerRight.set(rightPower);
+
         /* Mecanum drive-train wheel alignment is X shaped
          * left front[0] and right rear/back[3] are paired
          * left rear/back[1] and right front[2] are paired
@@ -415,7 +418,7 @@ public class MecanumRotateIMU extends LinearOpMode
         }
 
         /**
-         *  The operation to output one record of the fields to the storage file
+         * The operation to output one record of the fields to the storage file
          */
         public void writeLine()
         {

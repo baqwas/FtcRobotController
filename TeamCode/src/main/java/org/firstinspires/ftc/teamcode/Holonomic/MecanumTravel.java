@@ -31,11 +31,11 @@
   <li> displays a few status messages</li>
   </ul>
   @author modified by armw
- * @version 1.1
+ * @version 1.1 - Converted to Universal IMU Interface
  * @param none
  * @return none
  * @exception none
- * @see https://stemrobotics.cs.pdx.edu/node/7266
+ * @see https://stemrobototics.cs.pdx.edu/node/7266
  * <p>
  * This program registers as Autonomous OpMode in the FtcRobotController app.
  * The robot travels forward in a linear movement. When the touch sensor is pressed
@@ -45,25 +45,9 @@
  * runs the FtcRobotController app.
  * </p>
  * <p>
- * BNO055 IMU parameters for initialization:
- * @see https://first-tech-challenge.github.io/SkyStone/com/qualcomm/hardware/bosch/BNO055IMU.Parameters.html
- * BNO055IMU interface abstracts the functionality of the Bosch/Sensortec BNO055 Intelligent 9-axis absolute orientation sensor
- * The BNO055 can output the following sensor data (as described in AdaFruit Absolute Orientation Sensor).
- * - Absolute Orientation (Euler Vector, 100Hz) Three axis orientation data based on a 360° sphere
- * - Absolute Orientation (Quaterion, 100Hz) Four point quaternion output for more accurate data manipulation
- * - Angular Velocity Vector (100Hz) Three axis of 'rotation speed' in rad/s
- * - Acceleration Vector (100Hz) Three axis of acceleration (gravity + linear motion) in m/s^2
- * - Magnetic Field Strength Vector (20Hz) Three axis of magnetic field sensing in micro Tesla (uT)
- * - Linear Acceleration Vector (100Hz) Three axis of linear acceleration data (acceleration minus gravity) in m/s^2
- * - Gravity Vector (100Hz) Three axis of gravitational acceleration (minus any movement) in m/s^2
- * - Temperature (1Hz) Ambient temperature in degrees celsius
- * Of those, the first (the gravity-corrected absolute orientation vector) is arguably the most useful in FTC robot design.
- *
- * Calibration available are:
- * System - gyro, accelerometer and magnetometer
- * Gyro
- * Accelerometer
- * Magnetometer
+ * Universal IMU parameters for initialization:
+ * The universal IMU interface uses the IMU class and configures the hub's orientation
+ * for robot-centric angles.
  * </p>
  * https://en.wikipedia.org/wiki/PID_controller
  * https://www.csimn.com/CSI_pages/PIDforDummies.html
@@ -74,7 +58,8 @@ package org.firstinspires.ftc.teamcode.Holonomic;
 
 import static java.lang.Thread.sleep;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// Old BNO055IMU is replaced by the new IMU interface
+// import com.qualcomm.hardware.bosch.BNO055IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -82,6 +67,11 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.TouchSensor;
+// New IMU-related imports
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
@@ -92,20 +82,37 @@ import org.firstinspires.ftc.teamcode.Control.PIDController;
 
 public class MecanumTravel {
 
-    BNO055IMU imu;
-    Orientation lastAngles = new Orientation();
+    // Change BNO055IMU to IMU
+    // YawPitchRollAngles is used to store the orientation data
+    IMU imu;
+    YawPitchRollAngles robotOrientation; // New variable to get orientation data
     double globalAngle, power = 0.30, correction, rotation;
     PIDController pidDrive, pidRotate;
     private DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
     long travelTicks;
     double TICKS_PER_INCH;
 
-    public void init(HardwareMap hwMap, BNO055IMU imux, DcMotorEx[] motorx, double COUNTS_PER_INCH) {
+    // Change BNO055IMU to IMU in the init method's parameters
+    public void init(HardwareMap hwMap, IMU imux, DcMotorEx[] motorx, double COUNTS_PER_INCH) {
         for (int i = 0; i < motorx.length; i++) {
             motor[i] = motorx[i];
             motor[i].setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
         imu = imux;
+
+        // *** Universal IMU Initialization ***
+        // Create an orientation parameter object.
+        // This is a default orientation for a Hub mounted flat with logo up and USB ports forward.
+        // You should adjust these parameters (LogoFacingDirection, UsbFacingDirection)
+        // to match your robot's actual Control/Expansion Hub mounting.
+        IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
+                RevHubOrientationOnRobot.LogoFacingDirection.UP,
+                RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
+
+        // Initialize the IMU with the specified parameters
+        imu.initialize(parameters);
+        // **********************************
+
         TICKS_PER_INCH = COUNTS_PER_INCH;
     }
 
@@ -161,16 +168,12 @@ public class MecanumTravel {
     }
 
     /**
-     * Resets the cumulative angle tracking to zero and initializes the lastAngles entity
-     * AxesReference - the axes reference in which the result will be expressed
-     * EXTRINSIC | INTRINSIC
-     * AxesOrder - the axes order in which the result will be expressed
-     * AngleUnit - the angle units in which the result will be expressed
-     * DEGREES | RADIANS
+     * Resets the cumulative angle tracking to zero.
+     * For the universal IMU, this is done using imu.resetYaw().
      */
     private void resetAngle() {
-        // the absolute orientation of the sensor as a set three angles
-        lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+        // Use the dedicated resetYaw() method for the universal IMU interface
+        imu.resetYaw(); //
         globalAngle = 0;
     }
 
@@ -180,23 +183,30 @@ public class MecanumTravel {
      * @return Angle in degrees. + = left, - = right.
      */
     private double getAngle() {
-        // We experimentally determined the Z axis is the axis we want to use for heading angle.
-        // We have to process the angle because the imu works in euler angles so the Z axis is
-        // returned as 0 to +180 or 0 to -180 rolling back to -179 or +179 when rotation passes
-        // 180 degrees. We detect this transition and track the total cumulative angle of rotation.
-        // the absolute orientation of the sensor as a set three angles
-        Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
-        double deltaAngle = angles.firstAngle - lastAngles.firstAngle;
+        // Use the new getRobotYawPitchRollAngles() method to get robot-centric angles
+        robotOrientation = imu.getRobotYawPitchRollAngles(); //
 
-        if (deltaAngle < -180)
-            deltaAngle += 360;
-        else if (deltaAngle > 180)
-            deltaAngle -= 360;
+        // The universal IMU interface provides robot-centric angles (Yaw, Pitch, Roll)
+        // Yaw is the robot's heading around the Z-axis, which is the value needed for the turn.
+        // Yaw angle is returned as a continuous value, so the old manual processing to track
+        // cumulative angle (deltaAngle < -180, etc.) is not strictly needed for basic turn
+        // control unless you want to track total accumulated rotation for more than one full turn
+        // of the robot. However, since the original code was written to handle the BNO055's
+        // $\pm 180^{\circ}$ wrap-around, we'll simplify and use the `resetYaw()` and the
+        // continuous heading provided by `getYaw()` for this conversion.
 
-        globalAngle += deltaAngle;
-        lastAngles = angles;
+        // When using the universal IMU, you can directly get the Yaw angle
+        // in degrees or radians. The original code used degrees for the PID loop.
+        double currentAngle = robotOrientation.getYaw(AngleUnit.DEGREES); //
 
-        return globalAngle;
+        // Since the old code performed cumulative angle tracking, we need to maintain
+        // that logic structure or rely on resetYaw() followed by a direct angle reading.
+        // For a simple PID turn (which this is), we rely on resetYaw() setting the start
+        // angle to 0, and currentAngle is the new heading.
+
+        // Since resetYaw() is used in resetAngle(), currentAngle will be the heading
+        // relative to the last reset.
+        return currentAngle;
     }
 
     /**
@@ -211,7 +221,7 @@ public class MecanumTravel {
     public void rotate(int degrees, double power) throws InterruptedException {
         double leftPower, rightPower;
 
-        resetAngle();                   // reset heading for tracking with IMU data
+        resetAngle();                   // reset heading to 0 for tracking with IMU data
         // if degrees > 359 cap at 359 with same sign as original value
         if (Math.abs(degrees) > 359) degrees = (int) Math.copySign(359, degrees);
 
@@ -233,40 +243,40 @@ public class MecanumTravel {
 
         pidRotate.reset();
         pidRotate.setSetpoint(degrees);
-        pidRotate.setInputRange(0, degrees);
+        // Input range is set for the PID controller to manage the range of the IMU's output
+        pidRotate.setInputRange(-180, 180); // Yaw is typically $\pm 180$ degrees
         pidRotate.setOutputRange(0, power);
         pidRotate.setTolerance(1);
         pidRotate.enable();
 
         // rotate until turn is completed.
         if (degrees < 0) {                               // On right turn we have to get off zero first.
-            // noinspection StatementWithEmptyBody
-            while (getAngle() == 0) {
-                motor[0].setPower(power);
-                motor[3].setPower(power);
-                motor[1].setPower(-power);
-                motor[2].setPower(-power);
-            }
+            // When using imu.resetYaw(), the angle starts at 0, so the 'get off zero' logic might not be needed,
+            // but we'll retain the `do-while` loop for PID control until it hits the target.
+            // The original logic here seems to be flawed for an IMU returning 0, so it's adjusted
+            // to just enter the PID loop.
+
             do {
-                power = pidRotate.performPID(getAngle()); // -ve power on right turn
-                motor[0].setPower(-power);
-                motor[3].setPower(-power);
-                motor[1].setPower(power);
-                motor[2].setPower(power);
+                power = pidRotate.performPID(getAngle()); // -ve power on right turn (negative degrees)
+                motor[0].setPower(-power); // Front Left
+                motor[3].setPower(-power); // Back Right
+                motor[1].setPower(power);  // Front Right
+                motor[2].setPower(power);  // Back Left
             } while (!pidRotate.onTarget());
+
         } else {                          // left turn
             do {
-                power = pidRotate.performPID(getAngle()); // +ve power on left turn
-                motor[0].setPower(-power);
-                motor[3].setPower(-power);
-                motor[1].setPower(power);
-                motor[2].setPower(power);
+                power = pidRotate.performPID(getAngle()); // +ve power on left turn (positive degrees)
+                motor[0].setPower(-power); // Front Left
+                motor[3].setPower(-power); // Back Right
+                motor[1].setPower(power);  // Front Right
+                motor[2].setPower(power);  // Back Left
             } while (!pidRotate.onTarget());
-            robotPower(0.0);            // turn off the motors
-            rotation = getAngle();
-            sleep(500);                 // time to let rotation stop; empirical value
-            resetAngle();               // reset angle for use in next heading
         }
+
+        robotPower(0.0);            // turn off the motors
+        rotation = getAngle();
+        sleep(500);                 // time to let rotation stop; empirical value
+        resetAngle();               // reset angle for use in next heading
     }
 }
-
