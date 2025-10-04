@@ -31,6 +31,8 @@ import com.qualcomm.robotcore.util.Range;
 // *** APRILTAG IMPORTS ***
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
@@ -59,6 +61,20 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     private static final double MAX_AUTO_TURN = 0.4;
     private static final int BLUE_GOAL_TAG_ID = 20;
     private static final int RED_GOAL_TAG_ID = 24;
+
+    // --- POSITION CONTROL CONSTANTS ---
+    private static final double DRIVE_P_GAIN = 0.05;
+    private static final double STRAFE_P_GAIN = 0.05;
+    private static final double HEADING_P_GAIN = 0.02;
+    private static final double POSITION_TOLERANCE = 2.0; // inches
+    private static final double HEADING_TOLERANCE = 5.0; // degrees
+    private static final double MAX_MOVE_POWER = 0.8;
+    private static final double MIN_MOVE_POWER = 0.1;
+
+    // --- Global Position Variables (Estimated by AprilTag Localization) ---
+    private double robotX = 0.0; // Robot X position (inches) relative to field origin
+    private double robotY = 0.0; // Robot Y position (inches) relative to field origin
+    private double robotHeading = 0.0; // Robot Heading (degrees) relative to field origin (Yaw)
 
     // --- AprilTag Vision Variables ---
     private AprilTagProcessor aprilTag;
@@ -112,14 +128,21 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     // Waypoint entities
-    private final Waypoint redPos1Waypoint = new Waypoint(-36.0, 60.0, 90.0);
-    private final Waypoint bluePos1Waypoint = new Waypoint(-36.0, -60.0, -90.0);
-    private final Waypoint redScanGoalPosition = new Waypoint(36.0, 50.0, 0.0);
-    private final Waypoint blueScanGoalPosition = new Waypoint(36.0, -50.0, 0.0);
+    // NOTE: Coordinates should be in inches and relative to the field origin
+    private final Waypoint bluePos1Waypoint = new Waypoint(-12.0, 12.0, 0.0); // Example: Start far from center, facing long way
+    private final Waypoint bluePos2Waypoint = new Waypoint(-30.0, 30.0, 35.0); // New: Start closer to center
+    private final Waypoint bluePos3Waypoint = new Waypoint(-36.0, 36.0, 45.0);  // New: Start far edge
+
+    private final Waypoint redPos1Waypoint = new Waypoint(12.0, 12.0, 0.0); // Example: Start far from center, facing long way
+    private final Waypoint redPos2Waypoint = new Waypoint(30.0, 30.0, -35.0); // New: Start closer to center
+    private final Waypoint redPos3Waypoint = new Waypoint(36.0, 36.0, -45.0);  // New: Start far edge
+
+    private final Waypoint redScanGoalPosition = new Waypoint(36.0, 36.0, 45.0);
+    private final Waypoint blueScanGoalPosition = new Waypoint(-36.0, 36.0, -45.0);
 
     // NEW FINAL PARKING WAYPOINTS
-    private final Waypoint redFinalWaypoint = new Waypoint(0.0, 36.0, 0.0); // Example Final Parking for Red
-    private final Waypoint blueFinalWaypoint = new Waypoint(0.0, -36.0, 0.0); // Example Final Parking for Blue
+    private final Waypoint redFinalWaypoint = new Waypoint(48.0, 24.0, 0.0); // Example Final Parking for Red
+    private final Waypoint blueFinalWaypoint = new Waypoint(-48, 24.0, 0.0); // Example Final Parking for Blue
 
 
     @Override
@@ -170,7 +193,36 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         waitForStart();
 
         if (opModeIsActive()) {
-            Waypoint selectedWaypoint = (alliance == Alliance.RED) ? redPos1Waypoint : bluePos1Waypoint;
+            Waypoint selectedWaypoint;
+
+            // Select the starting waypoint based on user input
+            if (alliance == Alliance.RED) {
+                if (position == Position.POS1) {
+                    selectedWaypoint = redPos1Waypoint;
+                } else if (position == Position.POS2) {
+                    selectedWaypoint = redPos2Waypoint;
+                } else { // position == Position.POS3
+                    selectedWaypoint = redPos3Waypoint;
+                }
+            } else { // Alliance.BLUE
+                if (position == Position.POS1) {
+                    selectedWaypoint = bluePos1Waypoint;
+                } else if (position == Position.POS2) {
+                    selectedWaypoint = bluePos2Waypoint;
+                } else { // position == Position.POS3
+                    selectedWaypoint = bluePos3Waypoint;
+                }
+            }
+
+            // Set initial robot position estimate (could be refined by AprilTag later)
+            robotX = selectedWaypoint.x;
+            robotY = selectedWaypoint.y;
+            robotHeading = selectedWaypoint.heading;
+
+            // Log the selected starting position (Important for debugging)
+            telemetry.addData("Starting Pose", "(%.1f, %.1f) @ %.1f", selectedWaypoint.x, selectedWaypoint.y, selectedWaypoint.heading);
+            telemetry.update();
+
             runAutonomousRoutine(selectedWaypoint);
             sleep(1000);
         }
@@ -185,9 +237,15 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         telemetry.addData("Executing Path", "Starting from (%.1f, %.1f)", startPoint.x, startPoint.y);
         telemetry.update();
 
+        visionPortal.resumeStreaming(); // Keep streaming on for continuous localization/detection
+
         // Main FSM loop. Loop continues until opMode is stopped, state is COMPLETE, or time runs out.
         while (opModeIsActive() && currentState != RobotState.COMPLETE && getRuntime() < AUTONOMOUS_TIMEOUT_S) {
+            // Continuously update robot position using AprilTag detections (localization)
+            updateRobotPosition();
+
             telemetry.addData("Current State", currentState.toString());
+            telemetry.addData("Robot Pose (X, Y, H)", "(%.1f, %.1f, %.1f)", robotX, robotY, robotHeading);
             telemetry.addData("AprilTag ID", targetAprilTagID == -1 ? "N/A" : targetAprilTagID);
             telemetry.addData("Time Left", "%.1f", AUTONOMOUS_TIMEOUT_S - getRuntime());
             telemetry.update();
@@ -206,17 +264,21 @@ public class AutoPreviewEventFusion extends LinearOpMode {
 
                 case SCAN_GOAL:
                     int goalTagId = (alliance == Alliance.RED) ? RED_GOAL_TAG_ID : BLUE_GOAL_TAG_ID;
+                    Waypoint scanGoalWaypoint = (alliance == Alliance.RED) ? redScanGoalPosition : blueScanGoalPosition;
 
-                    // Placeholder: Move to a general area where the tag is visible
-                    driveMecanum(0.5, 0, 0, 10, 2.0);
+                    // Travel to the preset Waypoint for the Alliance's GOAL scan position
+                    telemetry.addData("Status", "Driving to Scan Goal Waypoint (%.1f, %.1f)", scanGoalWaypoint.x, scanGoalWaypoint.y);
+                    telemetry.update();
+                    driveToWaypoint(scanGoalWaypoint); // Replaced time-based move
 
-                    AprilTagDetection goalDetection = scanForAprilTag(goalTagId);
+                    // Now scan for the tag from the precise location
+                    AprilTagDetection goalDetection = getFirstDetection(goalTagId);
                     targetAprilTagID = (goalDetection != null) ? goalDetection.id : -1;
 
                     if (targetAprilTagID != -1) {
                         currentState = RobotState.DRIVE_TO_GOAL;
                     } else {
-                        currentState = RobotState.LAUNCH; // Fallback
+                        currentState = RobotState.LAUNCH; // Fallback if tag isn't visible
                     }
                     sleep(500);
                     break;
@@ -262,12 +324,14 @@ public class AutoPreviewEventFusion extends LinearOpMode {
                     break;
 
                 case DRIVING_AWAY_FROM_GOAL:
-                    driveMecanum(-0.5, 0, 0, 4, 1.0);
+                    // Simple move away from the goal, which is not position-critical
+                    moveRobotBlocking(-0.5, 0, 0, 1.0);
                     currentState = RobotState.ROTATING;
                     break;
 
                 case ROTATING:
-                    driveMecanum(0, 0, 0.5, 90, 2.0);
+                    // Simple time-based rotation, awaiting a full IMU implementation
+                    moveRobotBlocking(0, 0, 0.5, 2.0); // Rotate CCW for 2.0s
                     currentState = RobotState.LEAVE_LAUNCH_LINE;
                     break;
 
@@ -278,11 +342,8 @@ public class AutoPreviewEventFusion extends LinearOpMode {
                     telemetry.addData("Status", "LEAVE_LAUNCH_LINE: Driving to Final Waypoint (X: %.1f, Y: %.1f, H: %.1f)", finalWaypoint.x, finalWaypoint.y, finalWaypoint.heading);
                     telemetry.update();
 
-                    // NOTE: This driveMecanum call is a placeholder movement.
-                    // In a full implementation with odometry/RoadRunner, this would be replaced
-                    // with a command to drive to the specific finalWaypoint coordinates:
-                    // e.g., robot.driveTo(finalWaypoint.x, finalWaypoint.y, finalWaypoint.heading);
-                    driveMecanum(0.5, 0, 0, 6, 2.0); // Example: Drive forward 6 inches off the line
+                    // Non-time-based movement using AprilTag-derived position
+                    driveToWaypoint(finalWaypoint);
 
                     currentState = RobotState.COMPLETE;
                     break;
@@ -292,6 +353,8 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             }
         }
 
+        visionPortal.stopStreaming(); // Stop streaming before end of OpMode
+
         // --- FINAL MOTOR SHUTDOWN ---
         moveRobot(0, 0, 0);
         telemetry.addData("Status", "Autonomous Routine Ended.");
@@ -299,9 +362,103 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         telemetry.update();
     }
 
-    // --- VISION & MOVEMENT HELPER METHODS ---
+    // --- LOCALIZATION METHOD ---
+
+    /**
+     * Attempts to obtain the robot's current field position (X, Y, Heading)
+     * using the latest AprilTag detection for the goal tags (20 or 24).
+     */
+    public void updateRobotPosition() {
+        List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+        AprilTagDetection bestDetection = null;
+
+        for (AprilTagDetection detection : currentDetections) {
+            // Only consider the goal tags 20 or 24 for localization
+            if (detection.id == BLUE_GOAL_TAG_ID || detection.id == RED_GOAL_TAG_ID) {
+                // Ensure the detection has a calculated robot pose (meaning it's in the tag library)
+                if (detection.robotPose != null) {
+                    bestDetection = detection;
+                    break; // Use the first valid one found
+                }
+            }
+        }
+
+        if (bestDetection != null) {
+            // Update global position estimates from the tag's robotPose
+            robotX = bestDetection.robotPose.getPosition().x;
+            robotY = bestDetection.robotPose.getPosition().y;
+            // Yaw is the rotation around the Z (up) axis, which is the robot's heading
+            robotHeading = bestDetection.robotPose.getOrientation().getYaw(AngleUnit.DEGREES);
+        }
+    }
+
+    // --- POSITION-BASED MOVEMENT HELPER ---
+
+    /**
+     * Drives the robot to a specific Waypoint (X, Y, Heading) using P-Control and
+     * AprilTag Localization for position feedback. This function is blocking.
+     */
+    private void driveToWaypoint(Waypoint target) {
+        double timeout = getRuntime() + 5.0; // Max 5 seconds for movement
+
+        while (opModeIsActive() && getRuntime() < timeout) {
+            // 1. Update Position
+            updateRobotPosition();
+
+            // 2. Calculate Errors
+            double xError = target.x - robotX;
+            double yError = target.y - robotY;
+            double headingError = AngleUnit.normalizeDegrees(target.heading - robotHeading);
+
+            // Calculate overall distance error (for stopping condition)
+            double distanceError = Math.hypot(xError, yError);
+
+            // 3. Apply P-Control to Errors
+            // Convert field-centric error (xError, yError) to robot-centric drive powers (axial, lateral)
+            // Note: This requires rotating the error by the negative robot heading (cos(-H) = cos(H), sin(-H) = -sin(H))
+            double cosH = Math.cos(Math.toRadians(robotHeading));
+            double sinH = Math.sin(Math.toRadians(robotHeading));
+
+            double axialError = xError * sinH + yError * cosH;
+            double lateralError = xError * cosH - yError * sinH;
+
+            // P-Control gains
+            double axial = Range.clip(axialError * DRIVE_P_GAIN, -MAX_MOVE_POWER, MAX_MOVE_POWER);
+            double lateral = Range.clip(lateralError * STRAFE_P_GAIN, -MAX_MOVE_POWER, MAX_MOVE_POWER);
+            double yaw = Range.clip(headingError * HEADING_P_GAIN, -MAX_AUTO_TURN, MAX_AUTO_TURN);
+
+            // 4. Check for Completion
+            if (distanceError < POSITION_TOLERANCE && Math.abs(headingError) < HEADING_TOLERANCE) {
+                moveRobot(0, 0, 0);
+                telemetry.addData("Status", "Waypoint Reached!");
+                return;
+            }
+
+            // Apply minimum power if necessary to overcome friction
+            if (Math.abs(axial) < MIN_MOVE_POWER && Math.abs(axial) > 0) axial = Math.copySign(MIN_MOVE_POWER, axial);
+            if (Math.abs(lateral) < MIN_MOVE_POWER && Math.abs(lateral) > 0) lateral = Math.copySign(MIN_MOVE_POWER, lateral);
+
+
+            // 5. Apply Powers
+            moveRobot(axial, lateral, yaw);
+
+            telemetry.addData("Target", "(%.1f, %.1f) @ %.1f", target.x, target.y, target.heading);
+            telemetry.addData("Error (D, H)", "%.1f, %.1f", distanceError, headingError);
+            telemetry.addData("Power (A, L, Y)", "%.2f, %.2f, %.2f", axial, lateral, yaw);
+            telemetry.update();
+
+            sleep(10);
+        }
+
+        // Ensure robot stops if timeout is reached
+        moveRobot(0, 0, 0);
+    }
+
+    // --- VISION & LOW-LEVEL MOVEMENT HELPER METHODS ---
 
     private void initAprilTag() {
+        // Use a builder to ensure proper configuration for localization if needed,
+        // although easyCreateWithDefaults is used for simplicity here.
         aprilTag = AprilTagProcessor.easyCreateWithDefaults();
         aprilTag.setDecimation(2);
 
@@ -312,7 +469,7 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             visionPortal = VisionPortal.easyCreateWithDefaults(
                     BuiltinCameraDirection.BACK, aprilTag);
         }
-        visionPortal.stopStreaming();
+        visionPortal.stopStreaming(); // Start stopped to allow pre-match selection
     }
 
     private AprilTagDetection getFirstDetection(int desiredId) {
@@ -337,11 +494,6 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             if (detectedTag != null) {
                 telemetry.addLine(String.format(Locale.US, "\n==== Tag Detected ===="));
                 telemetry.addData("ID Found", detectedTag.id);
-                telemetry.addLine(String.format(Locale.US,
-                        "RBE (in, deg, deg): %.1f, %.1f, %.1f",
-                        detectedTag.ftcPose.range,
-                        detectedTag.ftcPose.bearing,
-                        detectedTag.ftcPose.elevation));
                 telemetry.update();
                 break;
             }
@@ -355,13 +507,13 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     /**
-     * Move robot according to desired axes motions (X=forward, Y=strafe left, Yaw=CCW)
+     * Non-blocking, low-level control of robot motion.
      */
-    public void moveRobot(double x, double y, double yaw) {
-        double frontLeftPower    =  x - y - yaw;
-        double frontRightPower   =  x + y + yaw;
-        double backLeftPower     =  x + y - yaw;
-        double backRightPower    =  x - y + yaw;
+    public void moveRobot(double axial, double lateral, double yaw) {
+        double frontLeftPower    =  axial - lateral - yaw;
+        double frontRightPower   =  axial + lateral + yaw;
+        double backLeftPower     =  axial + lateral - yaw;
+        double backRightPower    =  axial - lateral + yaw;
 
         double max = Math.max(Math.abs(frontLeftPower), Math.abs(frontRightPower));
         max = Math.max(max, Math.abs(backLeftPower));
@@ -380,37 +532,15 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         motorRightBack.setPower(backRightPower);
     }
 
-    private void driveMecanum(double axial, double lateral, double yaw, double distance, double timeoutS) {
+    /**
+     * Blocking, time-based movement (used for simplified, non-position-critical steps).
+     */
+    private void moveRobotBlocking(double axial, double lateral, double yaw, double timeoutS) {
         if (!opModeIsActive()) return;
 
-        double leftFrontPower = axial + lateral + yaw;
-        double rightFrontPower = axial - lateral - yaw;
-        double leftBackPower = axial - lateral + yaw;
-        double rightBackPower = axial + lateral - yaw;
-
-        double max = Math.max(Math.abs(leftFrontPower), Math.abs(rightFrontPower));
-        max = Math.max(max, Math.abs(leftBackPower));
-        max = Math.max(max, Math.abs(rightBackPower));
-
-        if (max > 1.0) {
-            leftFrontPower /= max;
-            rightFrontPower /= max;
-            leftBackPower /= max;
-            rightBackPower /= max;
-        }
-
-        motorLeftFront.setPower(leftFrontPower);
-        motorRightFront.setPower(rightFrontPower);
-        motorLeftBack.setPower(leftBackPower);
-        motorRightBack.setPower(rightBackPower);
-
+        moveRobot(axial, lateral, yaw);
         sleep((long) (timeoutS * 1000));
-
-        // Stop motors after placeholder movement
-        motorLeftFront.setPower(0);
-        motorRightFront.setPower(0);
-        motorLeftBack.setPower(0);
-        motorRightBack.setPower(0);
+        moveRobot(0, 0, 0);
     }
 
     private void launch(double power) {
@@ -421,7 +551,7 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         return true;
     }
 
-    // --- AprilTag Alignment Controller Class ---
+    // --- AprilTag Alignment Controller Class (for close-range alignment) ---
     private class AprilTagMovementController {
         public double getRobotCenterY(AprilTagDetection detection) {
             return detection.ftcPose.y - CAMERA_OFFSET_Y;
@@ -443,4 +573,3 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         }
     }
 }
-
