@@ -57,6 +57,7 @@ import java.util.Locale;
  * quadratic function for fly-by launch velocity calculation.
  */
 @TeleOp(name = "Preview Event TeleOp", group = "Match")
+//@Disabled
 public class TeleOpPreviewEvent extends LinearOpMode {
 
     // --- HARDWARE DECLARATIONS ---
