@@ -183,7 +183,7 @@ public class AprilTagLocalization extends LinearOpMode {
         VisionPortal.Builder builder = new VisionPortal.Builder();  // Create the vision portal by using a builder.
 
         if (USE_WEBCAM) {   // Set the camera (webcam vs. built-in RC phone camera).
-            builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam1"));    // NOTE: change in device name
+            builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));    // NOTE: change in device name
         } else {
             builder.setCamera(BuiltinCameraDirection.BACK);
         }

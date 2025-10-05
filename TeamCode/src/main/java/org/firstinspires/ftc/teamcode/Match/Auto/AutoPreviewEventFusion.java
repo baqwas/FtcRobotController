@@ -32,7 +32,6 @@ import com.qualcomm.robotcore.util.Range;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
@@ -46,7 +45,7 @@ import java.util.Locale;
 public class AutoPreviewEventFusion extends LinearOpMode {
 
     // --- AUTONOMOUS TIME CONSTANT ---
-    private static final double AUTONOMOUS_TIMEOUT_S = 29.0; // Stop robot activity at 29.0 seconds
+    private static final double AUTONOMOUS_TIMEOUT_S = 29.0;
 
     // --- VISION & MOVEMENT CONSTANTS ---
     private static final double DESIRED_DISTANCE = 12.0;
@@ -72,13 +71,13 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     private static final double MIN_MOVE_POWER = 0.1;
 
     // --- Global Position Variables (Estimated by AprilTag Localization) ---
-    private double robotX = 0.0; // Robot X position (inches) relative to field origin
-    private double robotY = 0.0; // Robot Y position (inches) relative to field origin
-    private double robotHeading = 0.0; // Robot Heading (degrees) relative to field origin (Yaw)
+    private double robotX = 0.0;
+    private double robotY = 0.0;
+    private double robotHeading = 0.0;
 
     // --- AprilTag Vision Variables ---
-    private AprilTagProcessor aprilTag;
-    private VisionPortal visionPortal;
+    private AprilTagProcessor aprilTag = null; // Initialized to null for safety
+    private VisionPortal visionPortal = null; // Initialized to null for safety
     private static final boolean USE_WEBCAM = true;
     private int targetAprilTagID = -1;
     private AprilTagMovementController movementController;
@@ -101,11 +100,12 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         COMPLETE
     }
 
-    // Hardware for Mecanum Drivetrain
+    // Hardware for Mecanum Drivetrain (Initialized to null for safety)
     private DcMotorEx motorLeftFront = null;
     private DcMotorEx motorLeftBack = null;
     private DcMotorEx motorRightFront = null;
     private DcMotorEx motorRightBack = null;
+    private boolean motorsInitialized = true; // Flag to track initialization success
 
     // Variables for Alliance and Position
     private Alliance alliance = Alliance.RED;
@@ -128,42 +128,46 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     // Waypoint entities
-    // NOTE: Coordinates should be in inches and relative to the field origin
-    private final Waypoint bluePos1Waypoint = new Waypoint(-12.0, 12.0, 0.0); // Example: Start far from center, facing long way
-    private final Waypoint bluePos2Waypoint = new Waypoint(-30.0, 30.0, 35.0); // New: Start closer to center
-    private final Waypoint bluePos3Waypoint = new Waypoint(-36.0, 36.0, 45.0);  // New: Start far edge
+    private final Waypoint bluePos1Waypoint = new Waypoint(-12.0, 12.0, 0.0);
+    private final Waypoint bluePos2Waypoint = new Waypoint(-30.0, 30.0, 35.0);
+    private final Waypoint bluePos3Waypoint = new Waypoint(-36.0, 36.0, 45.0);
 
-    private final Waypoint redPos1Waypoint = new Waypoint(12.0, 12.0, 0.0); // Example: Start far from center, facing long way
-    private final Waypoint redPos2Waypoint = new Waypoint(30.0, 30.0, -35.0); // New: Start closer to center
-    private final Waypoint redPos3Waypoint = new Waypoint(36.0, 36.0, -45.0);  // New: Start far edge
+    private final Waypoint redPos1Waypoint = new Waypoint(12.0, 12.0, 0.0);
+    private final Waypoint redPos2Waypoint = new Waypoint(30.0, 30.0, -35.0);
+    private final Waypoint redPos3Waypoint = new Waypoint(36.0, 36.0, -45.0);
 
     private final Waypoint redScanGoalPosition = new Waypoint(36.0, 36.0, 45.0);
     private final Waypoint blueScanGoalPosition = new Waypoint(-36.0, 36.0, -45.0);
 
-    // NEW FINAL PARKING WAYPOINTS
-    private final Waypoint redFinalWaypoint = new Waypoint(48.0, 24.0, 0.0); // Example Final Parking for Red
-    private final Waypoint blueFinalWaypoint = new Waypoint(-48, 24.0, 0.0); // Example Final Parking for Blue
+    private final Waypoint redFinalWaypoint = new Waypoint(48.0, 24.0, 0.0);
+    private final Waypoint blueFinalWaypoint = new Waypoint(-48, 24.0, 0.0);
 
 
     @Override
     public void runOpMode() {
-        // --- Hardware Initialization ---
-        motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
-        motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
-        motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
-        motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
+        // --- Hardware Initialization (Protected) ---
+        try {
+            motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+            motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+            motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+            motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
-        motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
-        motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
-        motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
-        motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
+            motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
+            motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
+            motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
+            motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
 
-        motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+            motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+            motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+            motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+            motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        } catch (Exception e) {
+            telemetry.addData("FATAL ERROR", "Drive motor initialization failed: " + e.getMessage());
+            telemetry.addData("WARNING", "Autonomous will be non-functional.");
+            motorsInitialized = false;
+        }
 
-        // --- Vision Initialization ---
+        // --- Vision Initialization (Protected) ---
         initAprilTag();
         movementController = new AprilTagMovementController();
 
@@ -191,6 +195,14 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         }
 
         waitForStart();
+
+        // If critical motors failed, stop immediately after start
+        if (!motorsInitialized) {
+            telemetry.addData("FATAL STOP", "Cannot run without drive motors.");
+            telemetry.update();
+            sleep(5000);
+            return;
+        }
 
         if (opModeIsActive()) {
             Waypoint selectedWaypoint;
@@ -227,6 +239,7 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             sleep(1000);
         }
 
+        // --- Final Vision System Cleanup ---
         if (visionPortal != null) {
             visionPortal.close();
         }
@@ -237,9 +250,15 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         telemetry.addData("Executing Path", "Starting from (%.1f, %.1f)", startPoint.x, startPoint.y);
         telemetry.update();
 
-        visionPortal.resumeStreaming(); // Keep streaming on for continuous localization/detection
+        // Resume streaming only if the vision system is initialized
+        if (visionPortal != null) {
+            visionPortal.resumeStreaming();
+        } else {
+            telemetry.addData("WARNING", "Vision Portal is NULL. Autonomous may be limited.");
+        }
 
-        // Main FSM loop. Loop continues until opMode is stopped, state is COMPLETE, or time runs out.
+
+        // Main FSM loop.
         while (opModeIsActive() && currentState != RobotState.COMPLETE && getRuntime() < AUTONOMOUS_TIMEOUT_S) {
             // Continuously update robot position using AprilTag detections (localization)
             updateRobotPosition();
@@ -252,6 +271,12 @@ public class AutoPreviewEventFusion extends LinearOpMode {
 
             switch (currentState) {
                 case SCAN_OBELISK:
+                    // If vision is missing, skip the state entirely
+                    if (visionPortal == null) {
+                        currentState = RobotState.SCAN_GOAL;
+                        break;
+                    }
+
                     AprilTagDetection obeliskDetection = scanForAprilTag(-1);
                     targetAprilTagID = (obeliskDetection != null) ? obeliskDetection.id : -1;
 
@@ -269,7 +294,13 @@ public class AutoPreviewEventFusion extends LinearOpMode {
                     // Travel to the preset Waypoint for the Alliance's GOAL scan position
                     telemetry.addData("Status", "Driving to Scan Goal Waypoint (%.1f, %.1f)", scanGoalWaypoint.x, scanGoalWaypoint.y);
                     telemetry.update();
-                    driveToWaypoint(scanGoalWaypoint); // Replaced time-based move
+                    driveToWaypoint(scanGoalWaypoint);
+
+                    // If vision is missing, go straight to Launch
+                    if (visionPortal == null) {
+                        currentState = RobotState.LAUNCH;
+                        break;
+                    }
 
                     // Now scan for the tag from the precise location
                     AprilTagDetection goalDetection = getFirstDetection(goalTagId);
@@ -284,6 +315,12 @@ public class AutoPreviewEventFusion extends LinearOpMode {
                     break;
 
                 case DRIVE_TO_GOAL:
+                    // Cannot drive to goal without vision
+                    if (visionPortal == null) {
+                        currentState = RobotState.LAUNCH;
+                        break;
+                    }
+
                     telemetry.addLine("Driving to target using continuous AprilTag feedback...");
 
                     // Continuously check for the tag and drive toward the DESIRED_DISTANCE
@@ -353,7 +390,10 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             }
         }
 
-        visionPortal.stopStreaming(); // Stop streaming before end of OpMode
+        // Stop streaming only if the vision system is initialized
+        if (visionPortal != null) {
+            visionPortal.stopStreaming();
+        }
 
         // --- FINAL MOTOR SHUTDOWN ---
         moveRobot(0, 0, 0);
@@ -369,6 +409,8 @@ public class AutoPreviewEventFusion extends LinearOpMode {
      * using the latest AprilTag detection for the goal tags (20 or 24).
      */
     public void updateRobotPosition() {
+        if (aprilTag == null) return; // Safety check
+
         List<AprilTagDetection> currentDetections = aprilTag.getDetections();
         AprilTagDetection bestDetection = null;
 
@@ -402,7 +444,7 @@ public class AutoPreviewEventFusion extends LinearOpMode {
         double timeout = getRuntime() + 5.0; // Max 5 seconds for movement
 
         while (opModeIsActive() && getRuntime() < timeout) {
-            // 1. Update Position
+            // 1. Update Position (relies on AprilTag localization)
             updateRobotPosition();
 
             // 2. Calculate Errors
@@ -415,7 +457,6 @@ public class AutoPreviewEventFusion extends LinearOpMode {
 
             // 3. Apply P-Control to Errors
             // Convert field-centric error (xError, yError) to robot-centric drive powers (axial, lateral)
-            // Note: This requires rotating the error by the negative robot heading (cos(-H) = cos(H), sin(-H) = -sin(H))
             double cosH = Math.cos(Math.toRadians(robotHeading));
             double sinH = Math.sin(Math.toRadians(robotHeading));
 
@@ -457,22 +498,38 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     // --- VISION & LOW-LEVEL MOVEMENT HELPER METHODS ---
 
     private void initAprilTag() {
-        // Use a builder to ensure proper configuration for localization if needed,
-        // although easyCreateWithDefaults is used for simplicity here.
-        aprilTag = AprilTagProcessor.easyCreateWithDefaults();
-        aprilTag.setDecimation(2);
+        try {
+            // Build the AprilTag Processor
+            aprilTag = AprilTagProcessor.easyCreateWithDefaults();
+            aprilTag.setDecimation(2);
 
-        if (USE_WEBCAM) {
-            visionPortal = VisionPortal.easyCreateWithDefaults(
-                    hardwareMap.get(WebcamName.class, "Webcam1"), aprilTag);
-        } else {
-            visionPortal = VisionPortal.easyCreateWithDefaults(
-                    BuiltinCameraDirection.BACK, aprilTag);
+            // Build the Vision Portal
+            VisionPortal.Builder builder = new VisionPortal.Builder();
+
+            if (USE_WEBCAM) {
+                // This line is prone to error if the webcam name is wrong
+                WebcamName webcam = hardwareMap.get(WebcamName.class, "Webcam 1");
+                builder.setCamera(webcam);
+            } else {
+                builder.setCamera(BuiltinCameraDirection.BACK);
+            }
+
+            visionPortal = builder.addProcessor(aprilTag).build();
+            visionPortal.stopStreaming(); // Start stopped to allow pre-match selection
+
+            telemetry.addData("Vision", "Initialization SUCCESS!");
+        } catch (Exception e) {
+            // If anything fails during initialization, this catches it.
+            visionPortal = null;
+            aprilTag = null;
+            telemetry.addData("Vision ERROR", "Initialization FAILED: " + e.getMessage());
+            telemetry.addData("Vision ERROR", "Autonomous will continue but without vision functionality.");
         }
-        visionPortal.stopStreaming(); // Start stopped to allow pre-match selection
     }
 
     private AprilTagDetection getFirstDetection(int desiredId) {
+        if (aprilTag == null) return null; // Safety check
+
         List<AprilTagDetection> currentDetections = aprilTag.getDetections();
         if (currentDetections.isEmpty()) { return null; }
         for (AprilTagDetection detection : currentDetections) {
@@ -482,6 +539,13 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     private AprilTagDetection scanForAprilTag(int desiredId) {
+        // 💥 CRITICAL SAFETY CHECK 💥
+        if (visionPortal == null || aprilTag == null) {
+            telemetry.addData("ERROR", "Vision system failed to initialize. Skipping scan.");
+            telemetry.update();
+            return null;
+        }
+
         AprilTagDetection detectedTag = null;
         long startTime = System.currentTimeMillis();
         long scanDuration = 3000;
@@ -510,6 +574,8 @@ public class AutoPreviewEventFusion extends LinearOpMode {
      * Non-blocking, low-level control of robot motion.
      */
     public void moveRobot(double axial, double lateral, double yaw) {
+        if (!motorsInitialized) return; // Cannot move without motors
+
         double frontLeftPower    =  axial - lateral - yaw;
         double frontRightPower   =  axial + lateral + yaw;
         double backLeftPower     =  axial + lateral - yaw;
@@ -526,17 +592,18 @@ public class AutoPreviewEventFusion extends LinearOpMode {
             backRightPower /= max;
         }
 
-        motorLeftFront.setPower(frontLeftPower);
-        motorRightFront.setPower(frontRightPower);
-        motorLeftBack.setPower(backLeftPower);
-        motorRightBack.setPower(backRightPower);
+        // Apply power only if motors are available (null check redundant if motorsInitialized is used, but safe)
+        if (motorLeftFront != null) motorLeftFront.setPower(frontLeftPower);
+        if (motorRightFront != null) motorRightFront.setPower(frontRightPower);
+        if (motorLeftBack != null) motorLeftBack.setPower(backLeftPower);
+        if (motorRightBack != null) motorRightBack.setPower(backRightPower);
     }
 
     /**
      * Blocking, time-based movement (used for simplified, non-position-critical steps).
      */
     private void moveRobotBlocking(double axial, double lateral, double yaw, double timeoutS) {
-        if (!opModeIsActive()) return;
+        if (!opModeIsActive() || !motorsInitialized) return;
 
         moveRobot(axial, lateral, yaw);
         sleep((long) (timeoutS * 1000));
