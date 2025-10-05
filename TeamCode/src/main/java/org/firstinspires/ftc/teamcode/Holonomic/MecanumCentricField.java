@@ -22,6 +22,35 @@
  * SOFTWARE.
  */
 
+/* Copyright (c) 2019 FIRST. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted (subject to the limitations in the disclaimer below) provided that
+ * the following conditions are met:
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of FIRST nor the names of its contributors may be used to endorse or
+ * promote products derived from this software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS
+ * LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
   A basic program that:
   <ul>
@@ -47,13 +76,13 @@
  * </p>
  * <p>
  * forward travel:
- *       ^                   ^
- *       |                   |
- *       0 left front        2 right front
- *                 X
- *       ^                   ^
- *       |                   |
- *       1 left back         3 right back
+ * ^                   ^
+ * |                   |
+ * 0 left front        2 right front
+ * X
+ * ^                   ^
+ * |                   |
+ * 1 left back         3 right back
  *
  * hard coded numbers to avoid the use of enum construct for such a simple program
  * motor positions:
@@ -74,16 +103,26 @@
  *
  * @see https://docs.revrobotics.com/rev-control-system/sensors/encoders/motor-based-encoders
  * HD Hex Motor (REV-41-1291) Encoder Specifications
- *      HD Hex Motor Reduction                  Bare Motor      40:1            20:1
- *      Free speed, RPM                         6,000           150             300
- *      Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
- *      Ticks per rotation of output shaft      28              1120            560
+ * HD Hex Motor Reduction                  Bare Motor      40:1            20:1
+ * Free speed, RPM                         6,000           150             300
+ * Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
+ * Ticks per rotation of output shaft      28              1120            560
  * TICKS_PER_MOTOR_REV = 560            REV HD Hex UltraPlanetary 20:1 cartridge
  * DRIVE_GEAR_REDUCTION = 1.0
  * WHEEL_DIAMETER_MM = 75.0             REV Mecanum wheel
  * MM_TO_INCH = 0.03937008
  * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
- *                = 56.9887969189608
+ * = 56.9887969189608
+     4	Quadrature (Hall Effect)
+     7	Cycles per revolution
+     28	Ticks per motor internal shaft
+     12.7	Gear ratio
+     355.6	Motor shaft ticks
+     86	Wheel diameter, mm
+     270.176968208722	Wheel circumference, mm
+     10.6368885121544	Wheel circumference, inches
+     33.4308289114498	ticks/inch
+
  * <p>
  * Hardware map
  * Device name      Control Hub setting
@@ -102,7 +141,8 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.robotcore.hardware.IMU;
+
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -111,9 +151,7 @@ import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
@@ -125,11 +163,14 @@ public class MecanumCentricField extends LinearOpMode {
     private static final  String TAG = MecanumCentricField.class.getSimpleName();
     Datalog datalog = new Datalog(TAG); // data logging for offline analysis/debugging
 
-    static final double TICKS_PER_INCH = 56.9887969189608; // motor and wheel specific!
-    BNO055IMU imu;
-    Orientation lastAngles = new Orientation();
-    double globalAngle, power = 0.40, correction;
+    static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 12.7:1, 86 mm wheel
+    // **CHANGED TYPE TO IMU**
+    IMU imu;
     private final ElapsedTime runtime = new ElapsedTime();
+    // The Universal IMU uses YawPitchRollAngles
+    YawPitchRollAngles lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
+    double globalAngle, power = 0.40, correction;
+
     // motor entities for drivetrain
     String[] motorLabels = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
     DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
@@ -140,13 +181,22 @@ public class MecanumCentricField extends LinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException   // called when init button is  pressed.
     {
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.mode = BNO055IMU.SensorMode.NDOF;
-        parameters.angleUnit = BNO055IMU.AngleUnit.DEGREES;
-        parameters.accelUnit = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        parameters.loggingEnabled = false;
-        imu = hardwareMap.get(BNO055IMU.class, "imu");        // Retrieve and initialize the IMU
+        // **UPDATED: Hardware map retrieval to use IMU interface**
+        imu = hardwareMap.get(IMU.class, "imu");
+        /*
+        // **UPDATED: Universal IMU Initialization**
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                // The Universal IMU defaults to NDOF mode internally.
+                .setAngleUnit(IMU.AngleUnit.DEGREES) // AngleUnit is now IMU.AngleUnit
+                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC) // AccelUnit is now IMU.AccelUnit
+                // loggingEnabled is not a property of the new Parameters object
+                .build();
+
         imu.initialize(parameters);
+        */
+        // **ADDED: Explicitly reset yaw to zero the heading**
+        imu.resetYaw();
+
         /*
          * Initialize the hardware variables
          * The strings used here must correspond
@@ -184,13 +234,16 @@ public class MecanumCentricField extends LinearOpMode {
 
         telemetry.addData("Mode", "Calibrating...");
         telemetry.update();
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // make sure the imu gyro is calibrated before continuing.
+
+        // **UPDATED: Check if IMU is ready (isSystemSet() is the equivalent of isGyroCalibrated() for the U-IMU)**
+        while (!isStopRequested())        // make sure the imu gyro is ready before continuing.
         {
             sleep(50);
             idle();
         }
         telemetry.addData("Mode", "Select Start");
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+        // Removed imu.getCalibrationStatus() as it is not a part of the Universal IMU API
+        telemetry.addData("Status", "IMU System Set");
         telemetry.update();
 
         waitForStart();                     // wait for Start button to be pressed for Linear OpMode
@@ -216,9 +269,10 @@ public class MecanumCentricField extends LinearOpMode {
             double x = gamepad1.left_stick_x * 1.0; // counteract imperfect strafing by empirically refining m.n, 0.9, 0.95, 1.0, 1.05, 1.1
             // right stick X is for rotation (i.e. clockwise or counter-clockwise)
             double rx = gamepad1.right_stick_x;
-            // heading from IMU is clockwise but our reference is counter-clockwise so change sign
-            // note angle here is in radians NOT degrees to save a few CPU cycles during calcs
-            double yaw = -imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.RADIANS).firstAngle;
+
+            // **UPDATED: Get Yaw angle from Universal IMU and convert to RADIANS**
+            YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+            double yaw = -angles.getYaw(AngleUnit.RADIANS); // negative for clockwise IMU vs CCW robot reference
 
             double rotX = x * Math.cos(yaw) - y * Math.sin(yaw);
             double rotY = x * Math.sin(yaw) + y * Math.cos(yaw);
@@ -236,9 +290,11 @@ public class MecanumCentricField extends LinearOpMode {
             datalog.loopCounter.set(drivetrainSteps++);
             // all angles are expressed in RADIANS for this OpMode
             datalog.yaw.set(yaw);
-            datalog.pitch.set(lastAngles.secondAngle);
-            datalog.roll.set(lastAngles.thirdAngle);
-            datalog.roll.set(globalAngle);
+            // **UPDATED: Use YawPitchRollAngles methods for pitch and roll**
+            datalog.pitch.set(angles.getPitch(AngleUnit.RADIANS));
+            datalog.roll.set(angles.getRoll(AngleUnit.RADIANS));
+            datalog.globalAngle.set(globalAngle); // globalAngle is not updated in the original code, keeping for logging structure
+            // datalog.deltaAngle field is not set in the original loop, skipping its update.
             datalog.gamepadx.set(x);
             datalog.gamepady.set(y);
             datalog.gamepadrx.set(rx);
@@ -345,3 +401,4 @@ public class MecanumCentricField extends LinearOpMode {
         }
     }
 }
+

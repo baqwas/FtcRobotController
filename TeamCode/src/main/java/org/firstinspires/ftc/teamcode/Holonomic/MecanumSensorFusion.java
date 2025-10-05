@@ -24,15 +24,19 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// REPLACED: com.qualcomm.hardware.bosch.BNO055IMU
+// NEW: Universal IMU Interface
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
+// REMOVED: org.firstinspires.ftc.robotcore.external.navigation.AxesOrder
+// REMOVED: org.firstinspires.ftc.robotcore.external.navigation.AxesReference
+// REMOVED: org.firstinspires.ftc.robotcore.external.navigation.Orientation
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import java.util.List;
 
 // Import your existing MecanumPathPlanner class and the new KalmanFilter
@@ -79,7 +83,8 @@ public class MecanumSensorFusion extends LinearOpMode {
 
     // Robot hardware
     private DcMotor frontLeft, frontRight, backLeft, backRight;
-    private BNO055IMU imu;
+    // CHANGED: BNO055IMU to IMU
+    private IMU imu;
 
     // Robot state and path planner
     private MecanumPathPlanner pathPlanner;
@@ -98,7 +103,8 @@ public class MecanumSensorFusion extends LinearOpMode {
         frontRight = hardwareMap.get(DcMotor.class, "front_right_motor");
         backLeft = hardwareMap.get(DcMotor.class, "back_left_motor");
         backRight = hardwareMap.get(DcMotor.class, "back_right_motor");
-        imu = hardwareMap.get(BNO055IMU.class, "imu");
+        // CHANGED: BNO055IMU.class to IMU.class
+        imu = hardwareMap.get(IMU.class, "imu");
 
         // Set motor directions based on your robot's physical layout
         frontLeft.setDirection(DcMotor.Direction.REVERSE);
@@ -117,10 +123,14 @@ public class MecanumSensorFusion extends LinearOpMode {
         backLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         backRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        // Initialize the IMU with parameters
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.angleUnit = BNO055IMU.AngleUnit.DEGREES;
+        // REPLACED: BNO055 IMU initialization with Universal IMU setup
+        /*
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                .setAngleUnit(AngleUnit.DEGREES)
+                .build();
         imu.initialize(parameters);
+        */
+        imu.resetYaw(); // Zero out the initial heading
 
         // --- Kalman Filter Initialization ---
         // State vector: [x, y, heading, vx, vy, v_heading]
@@ -308,12 +318,9 @@ public class MecanumSensorFusion extends LinearOpMode {
         // --- Prediction Step ---
         kalmanFilter.predict(u);
 
+        // CHANGED: Use imu.getRobotYawPitchRollAngles().getYaw()
         // Get the current heading from the IMU
-        double imuHeading = imu.getAngularOrientation(
-                AxesReference.INTRINSIC,
-                AxesOrder.ZYX,
-                AngleUnit.DEGREES
-        ).firstAngle;
+        double imuHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
 
         // Create the measurement vector `z` for the update step.
         // We assume our measurements are the new x, y, and heading.

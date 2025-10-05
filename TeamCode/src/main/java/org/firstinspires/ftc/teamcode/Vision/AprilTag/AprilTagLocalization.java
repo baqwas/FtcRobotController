@@ -120,8 +120,8 @@ public class AprilTagLocalization extends LinearOpMode {
 
         // Wait for the DS start button to be touched.
         telemetry.addLine("AprilTagLocalization v1\n")
-            .addData("DS preview on/off", "3 dots -> Camera Stream\n")
-            .addData(">", "Touch START to start OpMode");
+                .addData("DS preview on/off", "3 dots -> Camera Stream\n")
+                .addData(">", "Touch START to start OpMode");
         telemetry.update();
         waitForStart();
 
@@ -183,7 +183,7 @@ public class AprilTagLocalization extends LinearOpMode {
         VisionPortal.Builder builder = new VisionPortal.Builder();  // Create the vision portal by using a builder.
 
         if (USE_WEBCAM) {   // Set the camera (webcam vs. built-in RC phone camera).
-            builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam1"));    // NOTE: change in device name
+            builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));    // NOTE: change in device name
         } else {
             builder.setCamera(BuiltinCameraDirection.BACK);
         }

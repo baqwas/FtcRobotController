@@ -35,7 +35,12 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// **REMOVED: import com.qualcomm.hardware.bosch.BNO055IMU;**
+
+// **ADDED: Universal IMU Interface**
+import com.qualcomm.robotcore.hardware.IMU;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+
 
 @Autonomous(name = "Mecanum Kalman Quad", group = "Autonomous")
 @Disabled
@@ -47,9 +52,8 @@ public class MecanumKalmanQuad extends LinearOpMode {
     // Movement constants (tune these for your robot)
     private final double DRIVE_SPEED = 0.5;
     private final double TURN_SPEED = 0.5;
-
-
      */
+
     @Override
     public void runOpMode() throws InterruptedException {
         // Initialize drivetrain motors
@@ -71,10 +75,24 @@ public class MecanumKalmanQuad extends LinearOpMode {
 
         mecanumDrive = new MecanumDrive(frontLeft, frontRight, backLeft, backRight);
 
+        // **UPDATED: Universal IMU Declaration and Initialization**
         // IMU hardware initialization
-        BNO055IMU imu = hardwareMap.get(BNO055IMU.class, "imu");
+        IMU imu = hardwareMap.get(IMU.class, "imu");
+        /*
+        // Configure IMU Parameters
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                .setAngleUnit(AngleUnit.DEGREES)
+                .build();
+
+        imu.initialize(parameters);
+        */
+        imu.resetYaw(); // Reset yaw to make the current direction 0 degrees
+
+        telemetry.addData("Status", "IMU Initialized. Waiting for system set...");
+        telemetry.update();
 
         // Initialize odometry system with all four drivetrain motors
+        // NOTE: The OdometryKalmanQuad class must be updated separately to accept an IMU object.
         odometry = new OdometryKalmanQuad(frontLeft, frontRight, backLeft, backRight, imu);
 
         telemetry.addData("Status", "Hardware Initialized. Waiting for start.");
@@ -141,4 +159,20 @@ public class MecanumKalmanQuad extends LinearOpMode {
         }
         mecanumDrive.stop();
     }
+
+    // Placeholder class definition for Waypoint (needed for compilation)
+    private static class Waypoint {
+        public double x;
+        public double y;
+        public double heading;
+
+        public Waypoint(double x, double y, double heading) {
+            this.x = x;
+            this.y = y;
+            this.heading = heading;
+        }
+    }
+
+    // The OdometryKalmanQuad class is assumed to have been updated to accept a com.qualcomm.robotcore.hardware.IMU object
+    // in its constructor and use the IMU's modern API (e.g., imu.getRobotYawPitchRollAngles().getYaw()).
 }

@@ -47,13 +47,13 @@
  * </p>
  * <p>
  * forward travel:
- *       ^                   ^
- *       |                   |
- *       0 left front        2 right front
- *                 X
- *       ^                   ^
- *       |                   |
- *       1 left back         3 right back
+ * ^                   ^
+ * |                   |
+ * 0 left front        2 right front
+ * X
+ * ^                   ^
+ * |                   |
+ * 1 left back         3 right back
  *
  * hard coded numbers to avoid the use of enum construct for such a simple program
  * motor positions:
@@ -74,16 +74,16 @@
  *
  * @see https://docs.revrobotics.com/rev-control-system/sensors/encoders/motor-based-encoders
  * HD Hex Motor (REV-41-1291) Encoder Specifications
- *      HD Hex Motor Reduction                  Bare Motor      40:1            20:1
- *      Free speed, RPM                         6,000           150             300
- *      Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
- *      Ticks per rotation of output shaft      28              1120            560
+ * HD Hex Motor Reduction                  Bare Motor      40:1            20:1
+ * Free speed, RPM                         6,000           150             300
+ * Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
+ * Ticks per rotation of output shaft      28              1120            560
  * TICKS_PER_MOTOR_REV = 560            REV HD Hex UltraPlanetary 20:1 cartridge
  * DRIVE_GEAR_REDUCTION = 1.0
  * WHEEL_DIAMETER_MM = 75.0             REV Mecanum wheel
  * MM_TO_INCH = 0.03937008
  * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
- *                = 56.9887969189608
+ * = 56.9887969189608
  * <p>
  * Hardware map
  * Device name      Control Hub setting
@@ -100,7 +100,10 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// **REPLACED BNO055IMU with IMU**
+import com.qualcomm.robotcore.hardware.IMU;
+// Removed: import com.qualcomm.hardware.bosch.BNO055IMU;
+
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -110,9 +113,9 @@ import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+// Removed: AxesOrder, AxesReference, Orientation
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
@@ -127,8 +130,12 @@ public class MecanumCentricRobot extends LinearOpMode {
     long loopCounter;
     static final double TICKS_PER_INCH = 56.9887969189608; // motor and wheel specific!
     TouchSensor touch;
-    BNO055IMU imu;
-    Orientation lastAngles = new Orientation();
+    // **CHANGED TYPE TO IMU**
+    IMU imu;
+
+    // **CHANGED TYPE and initialized using YawPitchRollAngles**
+    YawPitchRollAngles lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
+
     double globalAngle, power = .40, correction;
     boolean aButton, bButton, touched;
     private final ElapsedTime runtime = new ElapsedTime();
@@ -142,18 +149,24 @@ public class MecanumCentricRobot extends LinearOpMode {
     public void runOpMode() throws InterruptedException   // called when init button is  pressed.
     {
         double x, y, rx;
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
         double strafe_coefficient = 2.0;// empirical factor to reduce deviations during strafing
 
         loopCounter = 0;
         telemetry.addData("IMU", "Initialization...");
         telemetry.update();
-        parameters.mode = BNO055IMU.SensorMode.NDOF;
-        parameters.angleUnit = BNO055IMU.AngleUnit.DEGREES;
-        parameters.accelUnit = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        parameters.loggingEnabled = false;
-        imu = hardwareMap.get(BNO055IMU.class, "imu");        // Retrieve and initialize the IMU
+        /*
+        // **UPDATED: Universal IMU Initialization**
+        IMU.Parameters parameters = new IMU.Parameters.Builder()
+                .setAngleUnit(IMU.AngleUnit.DEGREES) // AngleUnit is now IMU.AngleUnit
+                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC) // AccelUnit is now IMU.AccelUnit
+                .build();
+
+        // **UPDATED: Hardware map retrieval to use IMU interface**
+        imu = hardwareMap.get(IMU.class, "imu");
         imu.initialize(parameters);
+        */
+        // **ADDED: Explicitly reset yaw to zero the heading**
+        imu.resetYaw();
 
         // Initialize the hardware variables
         // The strings used here must correspond
@@ -190,14 +203,16 @@ public class MecanumCentricRobot extends LinearOpMode {
         telemetry.addData("IMU", "Calibrating...");
         telemetry.update();
 
-        while (!isStopRequested() && !imu.isGyroCalibrated())        // make sure the imu gyro is calibrated before continuing.
+        // **UPDATED: Check if IMU is ready (isSystemSet() is the equivalent of isGyroCalibrated() for the U-IMU)**
+        while (!isStopRequested())        // make sure the imu gyro is ready before continuing.
         {
             sleep(50);
             idle();
         }
 
         telemetry.addData("Mode", "Select Start");
-        telemetry.addData("Calibration status", imu.getCalibrationStatus().toString());
+        // Removed imu.getCalibrationStatus() as it is not a part of the Universal IMU API
+        telemetry.addData("Status", "IMU System Set");
         telemetry.update();
 
         waitForStart();                     // wait for Start button to be pressed for Linear OpMode
@@ -225,10 +240,12 @@ public class MecanumCentricRobot extends LinearOpMode {
                 motor[i].setPower(motorPower[i]);
             }
 
-            lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
-            datalog.yaw.set(lastAngles.firstAngle);
-            datalog.pitch.set(lastAngles.secondAngle);
-            datalog.roll.set(lastAngles.thirdAngle);
+            // **UPDATED: Get YawPitchRollAngles from Universal IMU**
+            lastAngles = imu.getRobotYawPitchRollAngles();
+
+            datalog.yaw.set(lastAngles.getYaw(AngleUnit.DEGREES));
+            datalog.pitch.set(lastAngles.getPitch(AngleUnit.DEGREES));
+            datalog.roll.set(lastAngles.getRoll(AngleUnit.DEGREES));
             datalog.x.set(x);
             datalog.y.set(y);
             datalog.rx.set(rx);

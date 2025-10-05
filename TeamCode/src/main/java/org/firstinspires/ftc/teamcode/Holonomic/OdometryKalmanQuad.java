@@ -17,24 +17,26 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * LIABILITY, WHETHER IN AN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-import com.qualcomm.hardware.bosch.BNO055IMU;
+// **REPLACED BNO055IMU with IMU**
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
-import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
-import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+// Removed: AxesOrder, AxesReference, Orientation (no longer necessary for IMU data retrieval)
 
 public class OdometryKalmanQuad {
 
     private DcMotorEx frontLeft, frontRight, backLeft, backRight;
-    private BNO055IMU imu;
+    // **CHANGED TYPE TO IMU**
+    private IMU imu;
 
     private double x, y, theta;
     private int lastFrontLeftPos, lastFrontRightPos, lastBackLeftPos, lastBackRightPos;
@@ -57,17 +59,23 @@ public class OdometryKalmanQuad {
     private double filteredX, filteredY, filteredTheta;
     private double P_theta; // Variance of our heading estimate
 
-    public OdometryKalmanQuad(DcMotorEx frontLeft, DcMotorEx frontRight, DcMotorEx backLeft, DcMotorEx backRight, BNO055IMU imu) {
+    // **CHANGED CONSTRUCTOR PARAMETER TYPE TO IMU**
+    public OdometryKalmanQuad(DcMotorEx frontLeft, DcMotorEx frontRight, DcMotorEx backLeft, DcMotorEx backRight, IMU imu) {
         this.frontLeft = frontLeft;
         this.frontRight = frontRight;
         this.backLeft = backLeft;
         this.backRight = backRight;
         this.imu = imu;
+        /*
+        // **UPDATED IMU Initialization using the Builder Pattern**
+        IMU.Parameters imuParameters = new IMU.Parameters.Builder()
+                .setAngleUnit(IMU.AngleUnit.RADIANS)
+                .build();
 
-        // Initialize IMU parameters
-        BNO055IMU.Parameters imuParameters = new BNO055IMU.Parameters();
-        imuParameters.angleUnit = BNO055IMU.AngleUnit.RADIANS;
         imu.initialize(imuParameters);
+         */
+        // **Explicitly call resetYaw() to set the starting heading to zero.**
+        imu.resetYaw();
 
         // Initialize state
         this.x = 0;
@@ -126,8 +134,9 @@ public class OdometryKalmanQuad {
         P_theta += Q_HEADING;
 
         // --- UPDATE STEP (using IMU measurement) ---
-        Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.RADIANS);
-        double measuredTheta = angles.firstAngle;
+        // **REPLACED getAngularOrientation with getRobotYawPitchRollAngles**
+        YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+        double measuredTheta = angles.getYaw(AngleUnit.RADIANS);
 
         double K = P_theta / (P_theta + R_HEADING);
         filteredTheta = predictedTheta + K * (measuredTheta - predictedTheta);
