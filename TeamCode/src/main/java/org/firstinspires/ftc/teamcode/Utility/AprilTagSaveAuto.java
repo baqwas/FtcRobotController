@@ -55,6 +55,7 @@
 package org.firstinspires.ftc.teamcode.Utility;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.util.Range;
 
@@ -92,7 +93,7 @@ import java.util.concurrent.TimeUnit;
 // import java.util.List;
 
 @Autonomous(name="AprilTag Save Autonomous", group="Test", preselectTeleOp="AprilTag Read TeleOp")
-//@Disabled // Uncomment this line to temporarily disable the OpMode
+@Disabled // Uncomment this line to temporarily disable the OpMode
 public class AprilTagSaveAuto extends LinearOpMode {
 
   // Enumerations for Alliance and Position
@@ -295,7 +296,9 @@ public class AprilTagSaveAuto extends LinearOpMode {
       telemetry.update();
 
       runAutonomousRoutine(selectedWaypoint);
-      sleep(1000);
+      telemetry.addData("Current State", currentState.toString());
+      sleep(10000);
+      telemetry.update();
     }
 
     // --- Final Vision System Cleanup ---
@@ -314,8 +317,8 @@ public class AprilTagSaveAuto extends LinearOpMode {
     } else {
       telemetry.addData("WARNING", "Vision Portal is NULL. Autonomous may be limited.");
     }
-
-
+    sleep(10000);
+    currentState = RobotState.LEAVE_LAUNCH_LINE;
     // Main FSM loop.
     while (opModeIsActive() && currentState != RobotState.COMPLETE && getRuntime() < AUTONOMOUS_TIMEOUT_S) {
       // Continuously update robot position using AprilTag detections (localization)
@@ -326,7 +329,7 @@ public class AprilTagSaveAuto extends LinearOpMode {
       telemetry.addData("AprilTag ID", targetAprilTagID == -1 ? "N/A" : targetAprilTagID);
       telemetry.addData("Time Left", "%.1f", AUTONOMOUS_TIMEOUT_S - getRuntime());
       telemetry.update();
-
+      sleep(10000);
       switch (currentState) {
         case SCAN_OBELISK:
           // If vision is missing, skip the state entirely

@@ -33,11 +33,12 @@
 
 package org.firstinspires.ftc.teamcode.Utility;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 
 @TeleOp(name="AprilTag Read TeleOp", group="Test")
-//@Disabled // Uncomment this line to temporarily disable the OpMode
+@Disabled // Uncomment this line to temporarily disable the OpMode
 public class AprilTagReadTeleOp extends OpMode {
 
   private int autonomousAprilTagID = 0;

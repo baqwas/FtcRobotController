@@ -215,7 +215,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 @TeleOp(name = "Mecanum: Spin Direction", group = "Test")
-// @Disabled
+@Disabled
 
 public class MecanumSpinDirection extends LinearOpMode {
 

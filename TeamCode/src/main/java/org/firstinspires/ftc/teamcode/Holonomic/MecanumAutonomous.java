@@ -100,53 +100,50 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-// --- UNIVERSAL IMU IMPORTS ---
-import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+// *** Universal IMU Imports ***
 
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.TouchSensor;
-import com.qualcomm.robotcore.util.ElapsedTime;
-
+import com.qualcomm.robotcore.hardware.IMU;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
-@TeleOp(name = "Mecanum: Travel IMU", group = "Test")
-@Disabled
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
-public class MecanumTravelIMU extends LinearOpMode
+@Autonomous(name = "Preview Event Mecanum Autonomous", group = "Match", preselectTeleOp="Preview Event TeleOp")
+//@Disabled
+
+public class MecanumAutonomous extends LinearOpMode
 {
     private static final  String TAG = MecanumTravelIMU.class.getSimpleName(); // for use in logging
     Datalog datalog = new Datalog(TAG);
     /**
-    // calcs for TICKS_PER_INCH at
-    // https://docs.google.com/spreadsheets/d/1PRGoHqyCUkSiiUiAUla-mElgsUdoqUssUntqvU-TYFY/edit?usp=sharing
-    // static final double     TICKS_PER_INCH = 217.3267045; // REV Robotics Core Hex motor (REV-41-1300) & 75mm wheel
-    // static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
-    // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 (19.2:1) and 96mm Mecanum wheel
-       SWYFT Drive v2:
-        4	Quadrature (Hall Effect)
-        7	Cycles per revolution
-        28	Ticks per motor internal shaft
-        12.7	Gear ratio
-        355.6	Motor shaft ticks
-        86	Wheel diameter, mm
-        270.176968208722	Wheel circumference, mm
-        10.6368885121544	Wheel circumference, inches
-        33.4308289114498	ticks/inch
+     // calculations for TICKS_PER_INCH at
+     // <a href="https://docs.google.com/spreadsheets/d/1PRGoHqyCUkSiiUiAUla-mElgsUdoqUssUntqvU-TYFY/edit?usp=sharing">...</a>
+     // static final double     TICKS_PER_INCH = 217.3267045; // REV Robotics Core Hex motor (REV-41-1300) & 75mm wheel
+     static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
+     // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 (19.2:1) and 96mm Mecanum wheel
+     SWYFT Drive v2
+     4	Quadrature (Hall Effect)
+     7	Cycles per revolution
+     28	Ticks per motor internal shaft
+     12.7	Gear ratio
+     355.6	Motor shaft ticks
+     86	Wheel diameter, mm
+     270.176968208722	Wheel circumference, mm
+     10.6368885121544	Wheel circumference, inches
+     33.4308289114498	ticks/inch
      */
-    static final double     TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive V2, goBILDA 5203 series,
-
-    TouchSensor             touch;
+    static final double     TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
 
     IMU                     imu;
     double                  globalAngle, initialPower = .40, correction;
-    boolean                 aButton, bButton, touched;
+    boolean                 aButton, bButton;//, touched;
     private final ElapsedTime runtime = new ElapsedTime();
     // motor entities for drivetrain
     String[] motorLabels = {
@@ -170,39 +167,12 @@ public class MecanumTravelIMU extends LinearOpMode
      * rather, the current rotational position of the motor is simply reinterpreted as the new zero value.
      * However, as a side effect of placing a motor in this mode, power is removed from the motor,
      * causing it to stop, though it is unspecified whether the motor enters brake or float mode.
-     * Further, it should be noted that setting a motor toSTOP_AND_RESET_ENCODER may or may not be a transient state:
+     * Further, it should be noted that setting a motor to STOP_AND_RESET_ENCODER may or may not be a transient state:
      * motors connected to some motor controllers will remain in this mode until explicitly transitioned
      * to a different one, while motors connected to other motor controllers
      * will automatically transition to a different mode after the reset of the encoder is complete.
-     * See REV Robotics Core Hex and HD UltraPlanetary motor specifications
      *
-     * Bosch BNO055 https://www.bosch-sensortec.com/products/smart-sensors/bno055/#documents
-     * SensorMode
-     * ACCGYRO
-     * ACCMAG
-     * ACCONLY
-     * AMG
-     * COMPASS
-     * CONFIG
-     * DISABLED
-     * GYROONLY
-     * IMU           Fusion of accelerometer and gyroscope
-     * M4G           Fusion of accelerometer and magnetometer compensating limitations of gyroscope
-     * MAGGYRO
-     * MAGONLY
-     * NDOF          Fusion of all 3 sensors with FMC enabled; incomplete figure 8 pattern will calibrate magnetometer
-     * NDOF_FMC_OFF  Fusion of all 3 sensors but needs figure 8 pattern for magnetometer calibration
-     * BNO055IMU interface abstracts the functionality of the Bosch/Sensortec BNO055 9-axis absolute orientation sensor.
-     * The BNO055 can output the following sensor data
-     * Absolute Orientation (Euler Vector, 100Hz) Three axis orientation data based on a 360° sphere
-     * Absolute Orientation (Quaterion, 100Hz) Four point quaternion output for more accurate data manipulation
-     * Angular Velocity Vector (100Hz) Three axis of 'rotation speed' in rad/s
-     * Acceleration Vector (100Hz) Three axis of acceleration (gravity + linear motion) in m/s^2
-     * Magnetic Field Strength Vector (20Hz) Three axis of magnetic field sensing in micro Tesla (uT)
-     * Linear Acceleration Vector (100Hz) Three axis of linear acceleration data (acceleration minus gravity) in m/s^2
-     * Gravity Vector (100Hz) Three axis of gravitational acceleration (minus any movement) in m/s^2
-     * Temperature (1Hz) Ambient temperature in degrees celsius
-     * Of those, the first (the gravity-corrected absolute orientation vector) is the most useful in FTC robot design.
+     * Bosch BHI260AP <a href="https://www.bosch-sensortec.com/products/smart-sensor-systems/bhi260ap/">...</a>
      */
     private void LinearTravel(double travelLength, double travelPower) {
         double appliedPower = travelPower;
@@ -228,7 +198,7 @@ public class MecanumTravelIMU extends LinearOpMode
             yawError = checkDirection();  // Use gyro to drive in a straight line.
             correction = -ticksError + yawError;
 
-            // NEW: Get the current orientation for logging and telemetry
+            // Get the current orientation for logging and telemetry using the new interface
             YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
 
             for (int i = 0; i < motor.length; i++)              // for each motor
@@ -253,8 +223,8 @@ public class MecanumTravelIMU extends LinearOpMode
                 motor[2].setPower(appliedPower + correction);
                 motor[3].setPower(appliedPower - correction);
 
-                // UPDATED: Telemetry to use YawPitchRollAngles
-                telemetry.addData("1 IMU heading", orientation.getYaw(AngleUnit.DEGREES));
+                // *** IMU Logging Update ***
+                telemetry.addData("1 IMU Yaw", orientation.getYaw(AngleUnit.DEGREES));
                 telemetry.addData("2 Global heading", globalAngle);
                 telemetry.addData("3 Correction", correction);
                 telemetry.addData("4 Current ticks:", motorTicks[0]);
@@ -263,8 +233,7 @@ public class MecanumTravelIMU extends LinearOpMode
                 telemetry.addData("7 Motor power:", motor[0].getPower());
                 telemetry.addData("8 Travel power:", travelPower);
                 telemetry.update();
-
-                // UPDATED: Datalogging to use YawPitchRollAngles
+                /*
                 datalog.yaw.set(orientation.getYaw(AngleUnit.DEGREES));
                 datalog.pitch.set(orientation.getPitch(AngleUnit.DEGREES));
                 datalog.roll.set(orientation.getRoll(AngleUnit.DEGREES));
@@ -280,15 +249,14 @@ public class MecanumTravelIMU extends LinearOpMode
                 datalog.rightFront.set(motor[2].getPower());
                 datalog.rightBack.set(motor[3].getPower());
                 datalog.writeLine();        // The logged timestamp is taken when writeLine() is called
+                 */
 
                 aButton = gamepad1.a;       // allow teleop to change direction by 90 degrees
                 bButton = gamepad1.b;       // A - Cross; B - Circle
                 //touched = touch.isPressed();
                 if (/*touched || */aButton || bButton) {
                     backup();               // for a safer turn in the subsequent operation
-
                     if (/*touched || */aButton) rotate(-90, travelPower); // turn 90 degrees right
-
                     if (bButton) rotate(90, travelPower);             // turn 90 degrees left
                 }
             }
@@ -367,17 +335,18 @@ public class MecanumTravelIMU extends LinearOpMode
         }
         //touch = hardwareMap.touchSensor.get("sensorTouch");        // get a reference to touch sensor.
 
-        // --- UNIVERSAL IMU INITIALIZATION ---
-        // Set up the orientation of the Control Hub on the robot. Assuming default for this conversion.
+        // *** Universal IMU Initialization ***
+        // Create parameters object specifying the Control/Expansion Hub's orientation on the robot.
+        // The default is Logo UP, USB FORWARD. Adjust this for your robot.
         IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
+                RevHubOrientationOnRobot.LogoFacingDirection.FORWARD,
+                RevHubOrientationOnRobot.UsbFacingDirection.UP
         ));
 
         // Retrieve and initialize the IMU
         imu = hardwareMap.get(IMU.class, "imu");
         imu.initialize(parameters);
-        // ------------------------------------
+        // **********************************
 
         double travelLength = 0.0;     // 12" linear, will parametrically evaluate other lengths too!
         double deltaTravel = 3.0;
@@ -396,33 +365,37 @@ public class MecanumTravelIMU extends LinearOpMode
         telemetry.update();
         sleep(1000);
 
-        // NEW: Reset the Yaw once at the start of the OpMode to set the initial heading to 0 degrees.
+        // Reset the Yaw once at the start of the OpMode to set the initial heading to 0 degrees.
         imu.resetYaw();
-
+        /*
         // 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72
         for (int i = 0; i < 3; i++)
         {
             travelLength += deltaTravel;
-            LinearTravel(travelLength, initialPower);   // modularized for future use in Automomous
-            //LinearTravel(-travelLength, -initialPower);   // modularized for future use in Automomous
-            long pauseInterval = 5000;
-            telemetry.addData("Traveled", travelLength + " inches");
-            telemetry.addData("Paused", pauseInterval + " milliseconds");
-            telemetry.update();
-            sleep(pauseInterval);
-        }
 
+         */
+        travelLength = -12.0;
+        LinearTravel(travelLength, initialPower);   // modularized for future use in Autonomous
+        //LinearTravel(-travelLength, -initialPower);   // modularized for future use in Autonomous
+        //long pauseInterval = 5000;
+        telemetry.addData("Traveled", travelLength + " inches");
+        //telemetry.addData("Paused", pauseInterval + " milliseconds");
+        telemetry.update();
+        /*
+        sleep(pauseInterval);
+        }
+         */
     }
 
     /**
-     * Resets the cumulative angle tracking to zero and initializes the lastAngles entity
+     * Resets the cumulative angle tracking to zero.
+     * For the universal IMU, this is done using imu.resetYaw().
      */
     private void resetAngle()
     {
         // Use the dedicated resetYaw() method for the universal IMU interface
         imu.resetYaw();
-
-        globalAngle = 0;
+        globalAngle = 0; // Keep globalAngle reset for the OpMode's legacy logic
     }
 
     /**
@@ -432,7 +405,9 @@ public class MecanumTravelIMU extends LinearOpMode
     private double getAngle()
     {
         // The new IMU interface provides the Yaw angle (heading) directly,
-        // which is relative to the last call to imu.resetYaw(). This replaces the complex manual tracking.
+        // which is relative to the last call to imu.resetYaw().
+        // This value is what the OpMode's PID loop needs for straight-line correction and turning.
+
         YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
         double currentYaw = orientation.getYaw(AngleUnit.DEGREES);
 
@@ -548,7 +523,6 @@ public class MecanumTravelIMU extends LinearOpMode
             telemetry.addData("7 Motor power:", motor[0].getPower());
             telemetry.addData("8 Travel power:", travelPower);
          */
-
         public Datalog(String name)
         {
             // Build the underlying datalog object
