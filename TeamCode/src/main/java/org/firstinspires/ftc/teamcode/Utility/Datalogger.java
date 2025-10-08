@@ -49,7 +49,7 @@ public class Datalogger
   private final LoggableField[] fields;
   private final BufferedCsvWriter bufferedCsvWriter;
 
-  private Datalogger(BufferedCsvWriter bufferedCsvWriter, LoggableField[] fields)
+  public Datalogger(BufferedCsvWriter bufferedCsvWriter, LoggableField[] fields)
   {
     this.bufferedCsvWriter = bufferedCsvWriter;
     this.fields = fields;
