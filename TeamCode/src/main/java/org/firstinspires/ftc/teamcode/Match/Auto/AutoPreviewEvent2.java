@@ -8,6 +8,7 @@
 package org.firstinspires.ftc.teamcode.Match.Auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.util.Range;
@@ -25,8 +26,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="AprilTag: Go To Goal and Strafe", group = "AprilTag")
-//@Disabled
+@Autonomous(name="Preview Event2 Auto", group = "Match")
+@Disabled
 public class AutoPreviewEvent2 extends LinearOpMode
 {
     // --- VISION & DRIVE CONSTANTS (Adjust these for your robot and game) ---
@@ -57,8 +58,27 @@ public class AutoPreviewEvent2 extends LinearOpMode
     private VisionPortal visionPortal = null; // Initialize to null for safety
     private AprilTagProcessor aprilTag;
     private AprilTagDetection desiredTag = null;
+    private AprilTagMovementController movementController;
 
+    // Enumerations for Alliance and Position
+    enum Alliance { RED, BLUE }
+    enum Position { POS1, POS2, POS3 }
+    // Variables for Alliance and Position
+    private Alliance alliance = Alliance.RED;
+    private Position position = Position.POS1;
 
+    // A simple class to represent a Waypoint in the autonomous path
+    private class Waypoint {
+        public double x;
+        public double y;
+        public double heading;
+
+        public Waypoint(double x, double y, double heading) {
+            this.x = x;
+            this.y = y;
+            this.heading = heading;
+        }
+    }
     @Override
     public void runOpMode()
     {
@@ -80,9 +100,34 @@ public class AutoPreviewEvent2 extends LinearOpMode
             // Movement functions will check for null motors and be non-functional
         }
 
-
         // --- 2. INITIALIZE VISION ---
+
+        // --- Vision Initialization (Protected) ---
         initAprilTag();
+        movementController = new AprilTagMovementController();
+
+        // --- Driver Hub Pre-Match Selection ---
+        telemetry.addData("Status", "Ready for Selection");
+        telemetry.update();
+
+        while (!isStarted() && !isStopRequested()) {
+            if (gamepad1.b) {
+                alliance = Alliance.BLUE;
+            } else if (gamepad1.x) {
+                alliance = Alliance.RED;
+            }
+            if (gamepad1.dpad_up) {
+                position = Position.POS1;
+            } else if (gamepad1.dpad_right) {
+                position = Position.POS2;
+            } else if (gamepad1.dpad_down) {
+                position = Position.POS3;
+            }
+            telemetry.addData("Alliance", "Press B|O for Blue, X|□ for Red");
+            telemetry.addData("Position", "Press D-pad Up/Right/Down for POS1/POS2/POS3");
+            telemetry.addData("Current Selection", "Alliance: %s, Position: %s", alliance.toString(), position.toString());
+            telemetry.update();
+        }
 
         // Optional: Set manual exposure for better tag detection under competition lights (Webcams only)
         if (USE_WEBCAM) {
@@ -194,11 +239,9 @@ public class AutoPreviewEvent2 extends LinearOpMode
         }
     }
 
-
     // --------------------------------------------------------------------------
     //  HELPER FUNCTIONS (ADAPTED FROM SOURCE OPMODES)
     // --------------------------------------------------------------------------
-
 
     /**
      * Initializes the AprilTag processor and Vision Portal.
@@ -222,7 +265,7 @@ public class AutoPreviewEvent2 extends LinearOpMode
                 cameraSet = true;
             } catch (Exception e) {
                 // If the webcam is not found or configured incorrectly, log and fall back
-                telemetry.addData("Vision Error", "Webcam 'Webcam1' not found/configured. Using built-in camera.");
+                telemetry.addData("Vision Error", "Webcam 'Webcam 1' not found/configured. Using built-in camera.");
             }
         }
 
@@ -361,5 +404,27 @@ public class AutoPreviewEvent2 extends LinearOpMode
         }
         telemetry.addLine("\nkey:\nXYZ = X (Right), Y (Forward), Z (Up) dist.");
         telemetry.addLine("PRY = Pitch, Roll & Yaw (XYZ Rotation)");
+    }
+
+    // --- AprilTag Alignment Controller Class (for close-range alignment) ---
+    private class AprilTagMovementController {
+        public double getRobotCenterY(AprilTagDetection detection) {
+            return detection.ftcPose.y - CAMERA_OFFSET_Y;
+        }
+
+        public double[] calculatePowers(AprilTagDetection detection) {
+            double robotCenterX = detection.ftcPose.x - CAMERA_OFFSET_X;
+            double robotCenterY = getRobotCenterY(detection);
+
+            double rangeError = (robotCenterY - DESIRED_DISTANCE);
+            double strafeError = robotCenterX;
+            double headingError = detection.ftcPose.bearing;
+
+            double drive = Range.clip(rangeError * SPEED_GAIN, -MAX_AUTO_SPEED, MAX_AUTO_SPEED);
+            double strafe = Range.clip(strafeError * STRAFE_GAIN, -MAX_AUTO_STRAFE, MAX_AUTO_STRAFE);
+            double turn = Range.clip(headingError * TURN_GAIN, -MAX_AUTO_TURN, MAX_AUTO_TURN);
+
+            return new double[]{drive, strafe, turn};
+        }
     }
 }

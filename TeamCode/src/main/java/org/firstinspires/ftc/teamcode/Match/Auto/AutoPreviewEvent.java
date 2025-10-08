@@ -31,7 +31,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 
 @Autonomous(name="Preview Event Auto", group="Match", preselectTeleOp="TeleOpPreviewEvent")
-//@Disabled
+@Disabled
 public class AutoPreviewEvent extends LinearOpMode {
 
     // Enumerations for Alliance and Position
@@ -117,6 +117,7 @@ public class AutoPreviewEvent extends LinearOpMode {
 
         telemetry.addData("Status", "Ready for Selection");
         telemetry.update();
+        sleep(3000);
 
         while (!isStarted() && !isStopRequested()) {
             // Alliance Selection

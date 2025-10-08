@@ -1,0 +1,697 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2024 ParkCircus Productions; All Rights Reserved
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+/* Copyright (c) 2023 FIRST. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted (subject to the limitations in the disclaimer below) provided that
+ * the following conditions are met:
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of FIRST nor the names of its contributors may be used to endorse or
+ * promote products derived from this software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS
+ * LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+ */
+
+package org.firstinspires.ftc.teamcode.Utility;
+
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.util.Range;
+
+import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
+import org.firstinspires.ftc.teamcode.Match.Auto.AutoPreviewEvent;
+import org.firstinspires.ftc.teamcode.Match.Auto.AutoPreviewEventFusion;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.util.Range;
+
+// *** APRILTAG IMPORTS ***
+import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import java.util.List;
+import java.util.Locale;
+
+import java.util.concurrent.TimeUnit;
+
+// Note: In a real OpMode, you would import the AprilTag classes:
+// import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+// import org.firstinspires.ftc.vision.VisionPortal;
+// import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+// import java.util.List;
+
+@Autonomous(name="AprilTag Save Autonomous", group="Test", preselectTeleOp="AprilTag Read TeleOp")
+@Disabled // Uncomment this line to temporarily disable the OpMode
+public class AprilTagSaveAuto extends LinearOpMode {
+
+  // Enumerations for Alliance and Position
+  //enum Alliance { RED, BLUE } // replaced by SharedData class declaration
+  enum Position {POS1, POS2, POS3}
+
+  // Enumeration for the Finite State Machine (FSM)
+  enum RobotState {
+    SCAN_OBELISK,
+    SCAN_GOAL,
+    DRIVE_TO_GOAL,
+    LAUNCH,
+    WAIT_FOR_LAUNCH,
+    DRIVING_AWAY_FROM_GOAL,
+    ROTATING,
+    LEAVE_LAUNCH_LINE,
+    COMPLETE
+  }
+
+  // --- AUTONOMOUS TIME CONSTANT ---
+  private static final double AUTONOMOUS_TIMEOUT_S = 29.0;
+
+  // --- VISION & MOVEMENT CONSTANTS ---
+  private static final double DESIRED_DISTANCE = 12.0;
+  private static final double DISTANCE_TOLERANCE = 1.0;
+  private static final double CAMERA_OFFSET_X = -3.5;
+  private static final double CAMERA_OFFSET_Y = 0.0;
+  private static final double SPEED_GAIN = 0.025;
+  private static final double STRAFE_GAIN = 0.020;
+  private static final double TURN_GAIN = 0.015;
+  private static final double MAX_AUTO_SPEED = 0.6;
+  private static final double MAX_AUTO_STRAFE = 0.6;
+  private static final double MAX_AUTO_TURN = 0.4;
+  private static final int BLUE_GOAL_TAG_ID = 20;
+  private static final int RED_GOAL_TAG_ID = 24;
+
+  // Hardware for Mecanum Drivetrain (Initialized to null for safety)
+  private DcMotorEx motorLeftFront = null, motorLeftBack = null, motorRightFront = null, motorRightBack = null;
+  private boolean motorsInitialized = true; // Flag to track initialization success
+  // Variables for Alliance and Position
+  private Alliance alliance = Alliance.RED;
+  private Position position = Position.POS1;
+
+  // Initializing the FSM state
+  private RobotState currentState = RobotState.SCAN_OBELISK;
+
+  // A simple class to represent a Waypoint in the autonomous path
+  private class Waypoint {
+    public double x;
+    public double y;
+    public double heading;
+
+    public Waypoint(double x, double y, double heading) {
+      this.x = x;
+      this.y = y;
+      this.heading = heading;
+    }
+  }
+  // --- POSITION CONTROL CONSTANTS ---
+  private static final double DRIVE_P_GAIN = 0.05;
+  private static final double STRAFE_P_GAIN = 0.05;
+  private static final double HEADING_P_GAIN = 0.02;
+  private static final double POSITION_TOLERANCE = 2.0; // inches
+  private static final double HEADING_TOLERANCE = 5.0; // degrees
+  private static final double MAX_MOVE_POWER = 0.8;
+  private static final double MIN_MOVE_POWER = 0.1;
+
+  // --- Global Position Variables (Estimated by AprilTag Localization) ---
+  private double robotX = 0.0;
+  private double robotY = 0.0;
+  private double robotHeading = 0.0;
+
+  // Waypoint entities
+  private final Waypoint bluePos1Waypoint = new Waypoint(-12.0, 12.0, 0.0);
+  private final Waypoint bluePos2Waypoint = new Waypoint(-30.0, 30.0, 35.0);
+  private final Waypoint bluePos3Waypoint = new Waypoint(-36.0, 36.0, 45.0);
+
+  private final Waypoint redPos1Waypoint = new Waypoint(12.0, 12.0, 0.0);
+  private final Waypoint redPos2Waypoint = new Waypoint(30.0, 30.0, -35.0);
+  private final Waypoint redPos3Waypoint = new Waypoint(36.0, 36.0, -45.0);
+
+  private final Waypoint redScanGoalPosition = new Waypoint(36.0, 36.0, 45.0);
+  private final Waypoint blueScanGoalPosition = new Waypoint(-36.0, 36.0, -45.0);
+
+  private final Waypoint redFinalWaypoint = new Waypoint(48.0, 24.0, 0.0);
+  private final Waypoint blueFinalWaypoint = new Waypoint(-48, 24.0, 0.0);
+  // --- AprilTag Vision Variables ---
+  private AprilTagProcessor aprilTag = null; // Initialized to null for safety
+  private VisionPortal visionPortal = null; // Initialized to null for safety
+  private static final boolean USE_WEBCAM = true;
+  private int targetAprilTagID = -1;
+  private AprilTagMovementController movementController;
+
+  private final int SIMULATED_DETECTED_ID = 20;
+
+  @Override
+  public void runOpMode() {
+
+    // --- Initialization and Setup ---
+    // --- Hardware Initialization (Protected) ---
+    try {
+      motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+      motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+      motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+      motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
+
+      motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
+      motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
+      motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
+      motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
+
+      motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+      motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+      motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+      motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+    } catch (Exception e) {
+      telemetry.addData("FATAL ERROR", "Drive motor initialization failed: " + e.getMessage());
+      telemetry.addData("WARNING", "Autonomous will be non-functional.");
+      motorsInitialized = false;
+    }
+    // --- Vision Initialization (Protected) ---
+    initAprilTag();
+    movementController = new AprilTagMovementController();
+
+    // --- Driver Hub Pre-Match Selection ---
+    telemetry.addData("Status", "Ready for Selection");
+    telemetry.update();
+    // --- Driver Hub Pre-Match Selection ---
+    telemetry.addData("Status", "Ready for Selection");
+    telemetry.update();
+
+    while (!isStarted() && !isStopRequested()) {
+      // Alliance Selection
+      if (gamepad1.b) {
+        alliance = Alliance.BLUE;
+        SharedData.allianceColor = alliance; // BLUE
+      } else if (gamepad1.x) {
+        alliance = Alliance.RED;
+        SharedData.allianceColor = alliance; // RED
+      }
+
+      // Position Selection
+      if (gamepad1.dpad_up) {
+        position = Position.POS1;
+      } else if (gamepad1.dpad_right) {
+        position = Position.POS2;
+      } else if (gamepad1.dpad_down) {
+        position = Position.POS3;
+      }
+
+      telemetry.addData("Alliance", "Press B|O for Blue, X|□ for Red");
+      telemetry.addData("Position", "Press D-pad Up/Right/Down for POS1/POS2/POS3");
+      telemetry.addData("Current Selection", "Alliance: %s, Position: %s", alliance.toString(), position.toString());
+      telemetry.update();
+    }
+    telemetry.addData("Status", "Auto Initialized. (AprilTag ID is 0)");
+    telemetry.update();
+
+    // **(Real OpMode Step: Initialize VisionPortal and AprilTagProcessor here)**
+
+    waitForStart();
+
+    // If critical motors failed, stop immediately after start
+    if (!motorsInitialized) {
+      telemetry.addData("FATAL STOP", "Cannot run without drive motors.");
+      telemetry.update();
+      sleep(5000);
+      return;
+    }
+
+    if (opModeIsActive()) {
+      Waypoint selectedWaypoint;
+
+      // Select the starting waypoint based on user input
+      if (alliance == Alliance.RED) {
+        if (position == Position.POS1) {
+          selectedWaypoint = redPos1Waypoint;
+        } else if (position == Position.POS2) {
+          selectedWaypoint = redPos2Waypoint;
+        } else { // position == Position.POS3
+          selectedWaypoint = redPos3Waypoint;
+        }
+      } else { // Alliance.BLUE
+        if (position == Position.POS1) {
+          selectedWaypoint = bluePos1Waypoint;
+        } else if (position == Position.POS2) {
+          selectedWaypoint = bluePos2Waypoint;
+        } else { // position == Position.POS3
+          selectedWaypoint = bluePos3Waypoint;
+        }
+      }
+
+      // Set initial robot position estimate (could be refined by AprilTag later)
+      robotX = selectedWaypoint.x;
+      robotY = selectedWaypoint.y;
+      robotHeading = selectedWaypoint.heading;
+
+      // Log the selected starting position (Important for debugging)
+      telemetry.addData("Starting Pose", "(%.1f, %.1f) @ %.1f", selectedWaypoint.x, selectedWaypoint.y, selectedWaypoint.heading);
+      telemetry.update();
+
+      runAutonomousRoutine(selectedWaypoint);
+      telemetry.addData("Current State", currentState.toString());
+      sleep(10000);
+      telemetry.update();
+    }
+
+    // --- Final Vision System Cleanup ---
+    if (visionPortal != null) {
+      visionPortal.close();
+    }
+  }
+
+  private void runAutonomousRoutine(Waypoint startPoint) {
+    telemetry.addData("Executing Path", "Starting from (%.1f, %.1f)", startPoint.x, startPoint.y);
+    telemetry.update();
+
+    // Resume streaming only if the vision system is initialized
+    if (visionPortal != null) {
+      visionPortal.resumeStreaming();
+    } else {
+      telemetry.addData("WARNING", "Vision Portal is NULL. Autonomous may be limited.");
+    }
+    sleep(10000);
+    currentState = RobotState.LEAVE_LAUNCH_LINE;
+    // Main FSM loop.
+    while (opModeIsActive() && currentState != RobotState.COMPLETE && getRuntime() < AUTONOMOUS_TIMEOUT_S) {
+      // Continuously update robot position using AprilTag detections (localization)
+      updateRobotPosition();
+
+      telemetry.addData("Current State", currentState.toString());
+      telemetry.addData("Robot Pose (X, Y, H)", "(%.1f, %.1f, %.1f)", robotX, robotY, robotHeading);
+      telemetry.addData("AprilTag ID", targetAprilTagID == -1 ? "N/A" : targetAprilTagID);
+      telemetry.addData("Time Left", "%.1f", AUTONOMOUS_TIMEOUT_S - getRuntime());
+      telemetry.update();
+      sleep(10000);
+      switch (currentState) {
+        case SCAN_OBELISK:
+          // If vision is missing, skip the state entirely
+          if (visionPortal == null) {
+            currentState = RobotState.SCAN_GOAL;
+            break;
+          }
+
+          AprilTagDetection obeliskDetection = scanForAprilTag(-1);
+          targetAprilTagID = (obeliskDetection != null) ? obeliskDetection.id : -1;
+
+          telemetry.addData("Obelisk Tag ID", (targetAprilTagID != -1) ? targetAprilTagID : "NOT FOUND");
+          telemetry.update();
+          sleep(1000);
+
+          currentState = RobotState.SCAN_GOAL;
+          break;
+
+        case SCAN_GOAL:
+          int goalTagId = (alliance == Alliance.RED) ? RED_GOAL_TAG_ID : BLUE_GOAL_TAG_ID;
+          Waypoint scanGoalWaypoint = (alliance == Alliance.RED) ? redScanGoalPosition : blueScanGoalPosition;
+
+          // Travel to the preset Waypoint for the Alliance's GOAL scan position
+          telemetry.addData("Status", "Driving to Scan Goal Waypoint (%.1f, %.1f)", scanGoalWaypoint.x, scanGoalWaypoint.y);
+          telemetry.update();
+          driveToWaypoint(scanGoalWaypoint);
+
+          // If vision is missing, go straight to Launch
+          if (visionPortal == null) {
+            currentState = RobotState.LAUNCH;
+            break;
+          }
+
+          // Now scan for the tag from the precise location
+          AprilTagDetection goalDetection = getFirstDetection(goalTagId);
+          targetAprilTagID = (goalDetection != null) ? goalDetection.id : -1;
+
+          if (targetAprilTagID != -1) {
+            currentState = RobotState.DRIVE_TO_GOAL;
+          } else {
+            currentState = RobotState.LAUNCH; // Fallback if tag isn't visible
+          }
+          sleep(500);
+          break;
+
+        case DRIVE_TO_GOAL:
+          // Cannot drive to goal without vision
+          if (visionPortal == null) {
+            currentState = RobotState.LAUNCH;
+            break;
+          }
+
+          telemetry.addLine("Driving to target using continuous AprilTag feedback...");
+
+          // Continuously check for the tag and drive toward the DESIRED_DISTANCE
+          while (opModeIsActive() && getRuntime() < AUTONOMOUS_TIMEOUT_S) {
+            AprilTagDetection currentDetection = getFirstDetection(targetAprilTagID);
+
+            if (currentDetection != null) {
+              double[] powers = movementController.calculatePowers(currentDetection);
+              moveRobot(powers[0], powers[1], powers[2]);
+
+              double rangeError = (movementController.getRobotCenterY(currentDetection) - DESIRED_DISTANCE);
+              telemetry.addData("Alignment", "Range Error: %.2f", rangeError);
+              telemetry.update();
+
+              if (Math.abs(rangeError) <= DISTANCE_TOLERANCE) {
+                moveRobot(0, 0, 0);
+                currentState = RobotState.LAUNCH;
+                break;
+              }
+            } else {
+              moveRobot(0, 0, 0);
+              currentState = RobotState.LAUNCH; // Proceed with next state
+              break;
+            }
+            sleep(10); // Small delay for the control loop
+          }
+          break;
+
+        case LAUNCH:
+          launch(1.0);
+          currentState = RobotState.WAIT_FOR_LAUNCH;
+          break;
+
+        case WAIT_FOR_LAUNCH:
+          if(isLaunchComplete()) {
+            currentState = RobotState.DRIVING_AWAY_FROM_GOAL;
+          }
+          break;
+
+        case DRIVING_AWAY_FROM_GOAL:
+          // Simple move away from the goal, which is not position-critical
+          moveRobotBlocking(-0.5, 0, 0, 1.0);
+         break;
+
+        case ROTATING:
+          // Simple time-based rotation, awaiting a full IMU implementation
+          moveRobotBlocking(0, 0, 0.5, 2.0); // Rotate CCW for 2.0s
+          currentState = RobotState.LEAVE_LAUNCH_LINE;
+          break;
+
+        case LEAVE_LAUNCH_LINE:
+          // Determine the final parking Waypoint based on the alliance
+          Waypoint finalWaypoint = (alliance == Alliance.RED) ? redFinalWaypoint : blueFinalWaypoint;
+
+          telemetry.addData("Status", "LEAVE_LAUNCH_LINE: Driving to Final Waypoint (X: %.1f, Y: %.1f, H: %.1f)", finalWaypoint.x, finalWaypoint.y, finalWaypoint.heading);
+          telemetry.update();
+
+          // Non-time-based movement using AprilTag-derived position
+          driveToWaypoint(finalWaypoint);
+
+          currentState = RobotState.COMPLETE;
+          break;
+
+        case COMPLETE:
+          break;
+      }
+    }
+
+    // Stop streaming only if the vision system is initialized
+    if (visionPortal != null) {
+      visionPortal.stopStreaming();
+    }
+
+    // --- FINAL MOTOR SHUTDOWN ---
+    moveRobot(0, 0, 0);
+    telemetry.addData("Status", "Autonomous Routine Ended.");
+    telemetry.addData("Final Time", "%.1f", getRuntime());
+    telemetry.update();
+  }
+  // --- VISION & LOW-LEVEL MOVEMENT HELPER METHODS ---
+  // --- LOCALIZATION METHOD ---
+
+  /**
+   * Attempts to obtain the robot's current field position (X, Y, Heading)
+   * using the latest AprilTag detection for the goal tags (20 or 24).
+   */
+  public void updateRobotPosition() {
+    if (aprilTag == null) return; // Safety check
+
+    List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+    AprilTagDetection bestDetection = null;
+
+    for (AprilTagDetection detection : currentDetections) {
+      // Only consider the goal tags 20 or 24 for localization
+      if (detection.id == BLUE_GOAL_TAG_ID || detection.id == RED_GOAL_TAG_ID) {
+        // Ensure the detection has a calculated robot pose (meaning it's in the tag library)
+        if (detection.robotPose != null) {
+          bestDetection = detection;
+          break; // Use the first valid one found
+        }
+      }
+    }
+
+    if (bestDetection != null) {
+      // Update global position estimates from the tag's robotPose
+      robotX = bestDetection.robotPose.getPosition().x;
+      robotY = bestDetection.robotPose.getPosition().y;
+      // Yaw is the rotation around the Z (up) axis, which is the robot's heading
+      robotHeading = bestDetection.robotPose.getOrientation().getYaw(AngleUnit.DEGREES);
+    }
+  }
+  /**
+   * Drives the robot to a specific Waypoint (X, Y, Heading) using P-Control and
+   * AprilTag Localization for position feedback. This function is blocking.
+   */
+  private void driveToWaypoint(Waypoint target) {
+    double timeout = getRuntime() + 5.0; // Max 5 seconds for movement
+
+    while (opModeIsActive() && getRuntime() < timeout) {
+      // 1. Update Position (relies on AprilTag localization)
+      updateRobotPosition();
+
+      // 2. Calculate Errors
+      double xError = target.x - robotX;
+      double yError = target.y - robotY;
+      double headingError = AngleUnit.normalizeDegrees(target.heading - robotHeading);
+
+      // Calculate overall distance error (for stopping condition)
+      double distanceError = Math.hypot(xError, yError);
+
+      // 3. Apply P-Control to Errors
+      // Convert field-centric error (xError, yError) to robot-centric drive powers (axial, lateral)
+      double cosH = Math.cos(Math.toRadians(robotHeading));
+      double sinH = Math.sin(Math.toRadians(robotHeading));
+
+      double axialError = xError * sinH + yError * cosH;
+      double lateralError = xError * cosH - yError * sinH;
+
+      // P-Control gains
+      double axial = Range.clip(axialError * DRIVE_P_GAIN, -MAX_MOVE_POWER, MAX_MOVE_POWER);
+      double lateral = Range.clip(lateralError * STRAFE_P_GAIN, -MAX_MOVE_POWER, MAX_MOVE_POWER);
+      double yaw = Range.clip(headingError * HEADING_P_GAIN, -MAX_AUTO_TURN, MAX_AUTO_TURN);
+
+      // 4. Check for Completion
+      if (distanceError < POSITION_TOLERANCE && Math.abs(headingError) < HEADING_TOLERANCE) {
+        moveRobot(0, 0, 0);
+        telemetry.addData("Status", "Waypoint Reached!");
+        return;
+      }
+
+      // Apply minimum power if necessary to overcome friction
+      if (Math.abs(axial) < MIN_MOVE_POWER && Math.abs(axial) > 0) axial = Math.copySign(MIN_MOVE_POWER, axial);
+      if (Math.abs(lateral) < MIN_MOVE_POWER && Math.abs(lateral) > 0) lateral = Math.copySign(MIN_MOVE_POWER, lateral);
+
+
+      // 5. Apply Powers
+      moveRobot(axial, lateral, yaw);
+
+      telemetry.addData("Target", "(%.1f, %.1f) @ %.1f", target.x, target.y, target.heading);
+      telemetry.addData("Error (D, H)", "%.1f, %.1f", distanceError, headingError);
+      telemetry.addData("Power (A, L, Y)", "%.2f, %.2f, %.2f", axial, lateral, yaw);
+      telemetry.update();
+
+      sleep(10);
+    }
+
+    // Ensure robot stops if timeout is reached
+    moveRobot(0, 0, 0);
+  }
+  private void initAprilTag() {
+    try {
+      // Build the AprilTag Processor
+      aprilTag = AprilTagProcessor.easyCreateWithDefaults();
+      aprilTag.setDecimation(2);
+
+      // Build the Vision Portal
+      VisionPortal.Builder builder = new VisionPortal.Builder();
+
+      if (USE_WEBCAM) {
+        // This line is prone to error if the webcam name is wrong
+        WebcamName webcam = hardwareMap.get(WebcamName.class, "Webcam 1");
+        builder.setCamera(webcam);
+      } else {
+        builder.setCamera(BuiltinCameraDirection.BACK);
+      }
+
+      visionPortal = builder.addProcessor(aprilTag).build();
+      visionPortal.stopStreaming(); // Start stopped to allow pre-match selection
+
+      telemetry.addData("Vision", "Initialization SUCCESS!");
+    } catch (Exception e) {
+      // If anything fails during initialization, this catches it.
+      visionPortal = null;
+      aprilTag = null;
+      telemetry.addData("Vision ERROR", "Initialization FAILED: " + e.getMessage());
+      telemetry.addData("Vision ERROR", "Autonomous will continue but without vision functionality.");
+    }
+  }
+
+  // --- AprilTag Alignment Controller Class (for close-range alignment) ---
+
+  private AprilTagDetection getFirstDetection(int desiredId) {
+    if (aprilTag == null) return null; // Safety check
+
+    List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+    if (currentDetections.isEmpty()) { return null; }
+    for (AprilTagDetection detection : currentDetections) {
+      if (desiredId == -1 || detection.id == desiredId) { return detection; }
+    }
+    return null;
+  }
+
+  private AprilTagDetection scanForAprilTag(int desiredId) {
+    // 💥 CRITICAL SAFETY CHECK 💥
+    if (visionPortal == null || aprilTag == null) {
+      telemetry.addData("ERROR", "Vision system failed to initialize. Skipping scan.");
+      telemetry.update();
+      return null;
+    }
+
+    AprilTagDetection detectedTag = null;
+    long startTime = System.currentTimeMillis();
+    long scanDuration = 3000;
+
+    visionPortal.resumeStreaming();
+
+    while (opModeIsActive() && (System.currentTimeMillis() - startTime < scanDuration) && (detectedTag == null)) {
+      detectedTag = getFirstDetection(desiredId);
+
+      if (detectedTag != null) {
+        telemetry.addLine(String.format(Locale.US, "\n==== Tag Detected ===="));
+        telemetry.addData("ID Found", detectedTag.id);
+        telemetry.update();
+        break;
+      }
+      telemetry.addData("Scanning", "Looking for AprilTags ID %d... (Time: %.1f)", desiredId, getRuntime());
+      telemetry.update();
+      sleep(20);
+    }
+
+    visionPortal.stopStreaming();
+    return detectedTag;
+  }
+
+  /**
+   * Non-blocking, low-level control of robot motion.
+   */
+  public void moveRobot(double axial, double lateral, double yaw) {
+    if (!motorsInitialized) return; // Cannot move without motors
+
+    double frontLeftPower    =  axial - lateral - yaw;
+    double frontRightPower   =  axial + lateral + yaw;
+    double backLeftPower     =  axial + lateral - yaw;
+    double backRightPower    =  axial - lateral + yaw;
+
+    double max = Math.max(Math.abs(frontLeftPower), Math.abs(frontRightPower));
+    max = Math.max(max, Math.abs(backLeftPower));
+    max = Math.max(max, Math.abs(backRightPower));
+
+    if (max > 1.0) {
+      frontLeftPower /= max;
+      frontRightPower /= max;
+      backLeftPower /= max;
+      backRightPower /= max;
+    }
+
+    // Apply power only if motors are available (null check redundant if motorsInitialized is used, but safe)
+    if (motorLeftFront != null) motorLeftFront.setPower(frontLeftPower);
+    if (motorRightFront != null) motorRightFront.setPower(frontRightPower);
+    if (motorLeftBack != null) motorLeftBack.setPower(backLeftPower);
+    if (motorRightBack != null) motorRightBack.setPower(backRightPower);
+  }
+
+  /**
+   * Blocking, time-based movement (used for simplified, non-position-critical steps).
+   */
+  private void moveRobotBlocking(double axial, double lateral, double yaw, double timeoutS) {
+    if (!opModeIsActive() || !motorsInitialized) return;
+
+    moveRobot(axial, lateral, yaw);
+    sleep((long) (timeoutS * 1000));
+    moveRobot(0, 0, 0);
+  }
+
+  private void launch(double power) {
+    // Placeholder
+  }
+
+  private boolean isLaunchComplete() {
+    return true;
+  }
+
+  private class AprilTagMovementController {
+    public double getRobotCenterY(AprilTagDetection detection) {
+      return detection.ftcPose.y - CAMERA_OFFSET_Y;
+    }
+
+    public double[] calculatePowers(AprilTagDetection detection) {
+      double robotCenterX = detection.ftcPose.x - CAMERA_OFFSET_X;
+      double robotCenterY = getRobotCenterY(detection);
+
+      double rangeError = (robotCenterY - DESIRED_DISTANCE);
+      double strafeError = robotCenterX;
+      double headingError = detection.ftcPose.bearing;
+
+      double drive = Range.clip(rangeError * SPEED_GAIN, -MAX_AUTO_SPEED, MAX_AUTO_SPEED);
+      double strafe = Range.clip(strafeError * STRAFE_GAIN, -MAX_AUTO_STRAFE, MAX_AUTO_STRAFE);
+      double turn = Range.clip(headingError * TURN_GAIN, -MAX_AUTO_TURN, MAX_AUTO_TURN);
+
+      return new double[]{drive, strafe, turn};
+    }
+  }
+}

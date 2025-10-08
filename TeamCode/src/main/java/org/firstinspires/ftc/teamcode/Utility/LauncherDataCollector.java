@@ -24,6 +24,7 @@
 
 package org.firstinspires.ftc.teamcode.Utility;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -54,7 +55,6 @@ import java.util.Locale;
  * OpMode for collecting empirical data on launcher velocity vs. distance (range).
  * Logs successful (1) or unsuccessful (0) launches to a CSV file.
  * Includes PIDF control for accurate velocity setting and logs battery voltage.
- *
  * Controls:
  * - Gamepad 1 D-Pad Up/Down: Adjust Target Velocity (Fine)
  * - Gamepad 1 Left/Right Bumper: Adjust Target Velocity (Coarse)
@@ -64,6 +64,7 @@ import java.util.Locale;
  * - Gamepad 1 Y: EXIT OpMode and Close Data Log
  */
 @TeleOp(name = "Launcher Data Collector", group = "Test")
+@Disabled
 public class LauncherDataCollector extends LinearOpMode {
 
     // --- HARDWARE DECLARATION ---

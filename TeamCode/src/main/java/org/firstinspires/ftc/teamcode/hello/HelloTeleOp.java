@@ -24,6 +24,7 @@
 
 package org.firstinspires.ftc.teamcode.hello;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
@@ -45,7 +46,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
  * @see <a href="http://ftc-docs.firstinspires.org/en/latest/programming_resources/linear_op_mode/linear-op-mode.html">FIRST Linear OpMode Documentation</a>
  */
 @TeleOp(name="Hello TeleOp", group="Hello")
-// @Disabled
+@Disabled
 public class HelloTeleOp extends LinearOpMode {
 
     /**

@@ -24,6 +24,7 @@
 package org.firstinspires.ftc.teamcode.Match.Auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.Range;
@@ -41,7 +42,7 @@ import java.util.Locale;
 
 
 @Autonomous(name="Preview Event Fusion Auto", group="Match", preselectTeleOp="TeleOpPreviewEvent")
-//@Disabled
+@Disabled
 public class AutoPreviewEventFusion extends LinearOpMode {
 
     // --- AUTONOMOUS TIME CONSTANT ---
@@ -101,10 +102,7 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     // Hardware for Mecanum Drivetrain (Initialized to null for safety)
-    private DcMotorEx motorLeftFront = null;
-    private DcMotorEx motorLeftBack = null;
-    private DcMotorEx motorRightFront = null;
-    private DcMotorEx motorRightBack = null;
+    private DcMotorEx motorLeftFront = null, motorLeftBack = null, motorRightFront = null, motorRightBack = null;
     private boolean motorsInitialized = true; // Flag to track initialization success
 
     // Variables for Alliance and Position
