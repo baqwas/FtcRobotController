@@ -279,6 +279,9 @@ public class MecanumAutonomous extends LinearOpMode
 
     /**
      * Low-level control for Mecanum drive based on axial, lateral, and yaw power inputs.
+     * axial (forward) is positive
+     * lateral (strafe right) is positive
+     * yaw (counter-clockwise rotation) is positive
      */
     protected void moveRobot(double axial, double lateral, double yaw) {
         double powerLeftFront = axial + lateral + yaw;
