@@ -130,7 +130,7 @@ public class Datalogger
     }
   }
 
-  private void close()
+  void close()
   {
     try
     {
