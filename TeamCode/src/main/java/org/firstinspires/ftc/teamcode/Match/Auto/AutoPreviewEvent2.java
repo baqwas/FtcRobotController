@@ -3,6 +3,7 @@
  *
  * Combines AprilTag Localization setup with continuous P-Control driving logic.
  * Corrected: Ensures VisionPortal.Builder() is always initialized with a camera.
+ * 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
  */
 
 package org.firstinspires.ftc.teamcode.Match.Auto;
@@ -11,6 +12,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
@@ -26,7 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="Preview Event2 Auto", group = "Match")
+@Autonomous(name="Preview Event2 Auto", group = "Match", preselectTeleOp="TeleOpPreviewEvent")
 @Disabled
 public class AutoPreviewEvent2 extends LinearOpMode
 {
@@ -49,10 +51,10 @@ public class AutoPreviewEvent2 extends LinearOpMode
     private final double MAX_AUTO_TURN  = 0.3;   // Max turn speed
 
     // --- HARDWARE ---
-    private DcMotor frontLeftDrive = null;
-    private DcMotor frontRightDrive = null;
-    private DcMotor backLeftDrive = null;
-    private DcMotor backRightDrive = null;
+    private DcMotorEx motorLeftFront = null;
+    private DcMotorEx motorRightFront = null;
+    private DcMotorEx motorLeftBack = null;
+    private DcMotorEx motorRightBack = null;
 
     // --- VISION COMPONENTS ---
     private VisionPortal visionPortal = null; // Initialize to null for safety
@@ -84,16 +86,16 @@ public class AutoPreviewEvent2 extends LinearOpMode
     {
         // --- 1. INITIALIZE HARDWARE ---
         try {
-            frontLeftDrive = hardwareMap.get(DcMotor.class, "motorLeftFront");
-            frontRightDrive = hardwareMap.get(DcMotor.class, "motorRightFront");
-            backLeftDrive = hardwareMap.get(DcMotor.class, "motorLeftBack");
-            backRightDrive = hardwareMap.get(DcMotor.class, "motorRightBack");
+            motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+            motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+            motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+            motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
             // Assuming motor configuration for a standard Mecanum setup
-            frontLeftDrive.setDirection(DcMotor.Direction.REVERSE);
-            backLeftDrive.setDirection(DcMotor.Direction.REVERSE);
-            frontRightDrive.setDirection(DcMotor.Direction.FORWARD);
-            backRightDrive.setDirection(DcMotor.Direction.FORWARD);
+            motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
+            motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
+            motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
+            motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
         } catch (Exception e) {
             telemetry.addData("FATAL ERROR", "Drive motor initialization failed: " + e.getMessage());
             telemetry.update();
@@ -295,7 +297,7 @@ public class AutoPreviewEvent2 extends LinearOpMode
      */
     public void moveRobot(double x, double y, double yaw) {
         // Only proceed if drive motors are initialized
-        if (frontLeftDrive == null || frontRightDrive == null || backLeftDrive == null || backRightDrive == null) return;
+        if (motorLeftFront == null || motorRightFront == null || motorLeftBack == null || motorRightBack == null) return;
 
         // Calculate wheel powers.
         double frontLeftPower    =  x - y - yaw;
@@ -316,10 +318,10 @@ public class AutoPreviewEvent2 extends LinearOpMode
         }
 
         // Send powers to the wheels.
-        frontLeftDrive.setPower(frontLeftPower);
-        frontRightDrive.setPower(frontRightPower);
-        backLeftDrive.setPower(backLeftPower);
-        backRightDrive.setPower(backRightPower);
+        motorLeftFront.setPower(frontLeftPower);
+        motorRightFront.setPower(frontRightPower);
+        motorLeftBack.setPower(backLeftPower);
+        motorRightBack.setPower(backRightPower);
     }
 
 

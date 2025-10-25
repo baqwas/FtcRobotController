@@ -21,7 +21,15 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
+/// precise three-part process:
+///  Velocity Control: gamepad1.dpad_up and gamepad1.dpad_down adjust the target velocity incrementally.
+///  Motor Activation (setVelocity): gamepad1.y starts the launcher motor at the current target velocity.
+///  Launch/Outcome Logging: gamepad1.a (Success) or gamepad1.b (Failure) logs the data, and this action is now separated by a mandatory delay (VELOCITY_SETTLE_TIME_MS) after the launcher motor is activated to ensure the PID loop reaches the desired velocity.
+/// The updated OpMode is below:
+///  The OpMode now enforces a 1500ms stabilization period (defined by VELOCITY_SETTLE_TIME_MS)
+///  after the launcher motor is activated by the Y button, ensuring that when you press A or B to log the outcome,
+///  the motor has reached its target velocity. The telemetry output clearly informs the driver
+///  whether the velocity is stable enough to proceed with logging.
 package org.firstinspires.ftc.teamcode.Utility;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
