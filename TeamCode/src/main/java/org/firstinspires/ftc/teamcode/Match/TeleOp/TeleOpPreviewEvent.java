@@ -172,14 +172,14 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             //----------------------------//
             // INTAKE AND SHOOTING LOGIC  //
             //----------------------------//
-            if (gamepad1.x) {
+            if (gamepad2.x) {
                 servoHold.setPosition(0.5);
                 motorIntake.setPower(-INTAKE_POWER);
             } else {
                 servoHold.setPosition(0.7);
-                if (gamepad1.right_trigger > 0.1) {
+                if (gamepad2.right_trigger > 0.1) {
                     motorIntake.setPower(-INTAKE_POWER);
-                } else if (gamepad1.left_trigger > 0.1) {
+                } else if (gamepad2.left_trigger > 0.1) {
                     motorIntake.setPower(INTAKE_POWER);
                 } else {
                     motorIntake.setPower(0);
@@ -189,10 +189,10 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             //-------------------//
             // FLYWHEEL LAUNCHER //
             //-------------------//
-            if (gamepad1.a && !a_button_previously_pressed) {
+            if (gamepad2.a && !a_button_previously_pressed) {
                 flywheelOn = !flywheelOn;
             }
-            a_button_previously_pressed = gamepad1.a;
+            a_button_previously_pressed = gamepad2.a;
 
             if (flywheelOn) {
                 // Get the current velocity from the encoded motor
@@ -216,9 +216,9 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             //----------------//
             //     BASE LIFT  //
             //----------------//
-            if (gamepad1.dpad_up) {
+            if (gamepad2.dpad_up) {
                 motorLift.setPower(CLIMB_POWER);
-            } else if (gamepad1.dpad_down) {
+            } else if (gamepad2.dpad_down) {
                 motorLift.setPower(-CLIMB_POWER);
             } else {
                 motorLift.setPower(0);

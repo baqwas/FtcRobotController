@@ -84,6 +84,7 @@
  * MM_TO_INCH = 0.03937008
  * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
  * = 56.9887969189608
+ * TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
  * <p>
  * Hardware map
  * Device name      Control Hub setting
@@ -102,8 +103,12 @@ package org.firstinspires.ftc.teamcode.Match.Auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-//import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.IMU; // NEW: Universal IMU Interface
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // Required for setup
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;// For reading IMU data
+import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 // AprilTag Imports
@@ -113,9 +118,19 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import java.util.List;
 
+// --- Datalogger Imports ---
+import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+// --- IMU Universal Imports ---
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // NEW: For IMU mounting config
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;       // NEW: To get angles from IMU
+import static org.firstinspires.ftc.robotcore.external.navigation.AngleUnit.DEGREES; // Static import for clarity
+// --------------------------
+
 @Autonomous(name = "Meet 1 Auto", group = "Match", preselectTeleOp="TeleOpPreviewEvent")
 //@Disabled
 public class AutoMeet1 extends LinearOpMode {
+    private final String TAG = this.getClass().getSimpleName();
+    private Datalogger datalogger = null;
 
     // --- FSM State Definitions ---
     enum AutoState {
@@ -131,13 +146,19 @@ public class AutoMeet1 extends LinearOpMode {
     private DcMotorEx motorRightFront = null;
     private DcMotorEx motorRightBack = null;
 
+    // CHANGED: Use the Universal IMU interface
+    private IMU imu = null;
+
+    private TouchSensor touchSensor = null; // Touch sensor for state transition
+
+    // --------------------------
     // --- Vision Components ---
     private AprilTagProcessor aprilTag;
     private VisionPortal visionPortal;
 
     // --- Configuration Constants ---
     // Encoder constants for strafeLeft()
-    private static final double TICKS_PER_INCH = 30.0;
+    private static final double TICKS_PER_INCH = 33.4308289114498;
     private static final double STRAFE_DISTANCE_INCHES = 12.0;
     private static final double STRAFE_SPEED = 0.5;
 
@@ -161,6 +182,30 @@ public class AutoMeet1 extends LinearOpMode {
 
     @Override
     public void runOpMode() {
+        //datalog = new Datalog(TAG); // Datalog initialization
+        // --- A. Hardware Mapping ---
+        // Assuming your IMU is named "imu" in the configuration
+        imu = hardwareMap.get(IMU.class, "imu");
+
+        // --- B. Define Hub Orientation on Robot ---
+        // 1. Create the orientation object using the specified directions
+        RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(
+                // Logo Direction: The side of the hub with the REV logo
+                RevHubOrientationOnRobot.LogoFacingDirection.FORWARD,
+                // USB Direction: The side of the hub with the USB-C port
+                RevHubOrientationOnRobot.UsbFacingDirection.UP
+        );
+        // --- C. Create and Apply IMU Parameters ---
+        // 2. Create the IMU Parameters object and pass the orientation
+        IMU.Parameters parameters = new IMU.Parameters(orientationOnRobot);
+        // 3. Initialize the IMU with the parameters
+        // This process automatically calibrates and configures the sensor.
+        imu.initialize(parameters);
+        // 4. Reset the Yaw (Heading) to 0 degrees at the start of autonomous
+        imu.resetYaw();
+        telemetry.addData("IMU Status", "Initialized with Logo FORWARD, USB UP");
+        telemetry.update();
+
         // 1. Initialize Hardware (Drivetrain and Vision)
         try {
             motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
@@ -199,53 +244,79 @@ public class AutoMeet1 extends LinearOpMode {
         telemetry.addData("Target Tag", TARGET_TAG_ID);
         telemetry.update();
 
+        // --- DATALOGGER INITIALIZATION (NEW) ---
+        try {
+            // 1. Initialize the Datalogger with a filename and column headers
+            datalogger = new Datalogger(
+                    "AutoMeet1_Run",
+                    "Elapsed_Time_s",
+                    "FSM_State",
+                    "LF_Motor_Power",
+                    "Global_Angle"
+            );
+        } catch (RuntimeException e) {
+            telemetry.addData("ERROR", "Datalogger Init Failed: " + e.getMessage());
+            datalogger = null; // Ensure datalogger is null if setup failed
+        }
+        // ---------------------------------------
+
         waitForStart();
         runtime.reset();
 
+        // Ensure the logger is closed if the OpMode is stopped abruptly
+        try (Datalogger logOnClose = datalogger) {
         // --- FSM Processing Loop ---
-        while (opModeIsActive() && current_state != AutoState.AUTO_COMPLETE) {
+            while (opModeIsActive() && current_state != AutoState.AUTO_COMPLETE) {
 
-            switch (current_state) {
+                switch (current_state) {
 
-                case TRAVEL:
-                    // Modular call to drive using AprilTags
-                    // FIX: Splitting this complex telemetry call to avoid the 'Cannot resolve method' error.
-                    telemetry.addData("FSM State", "1. TRAVEL: Driving to AprilTag");
-                    telemetry.addData("Target (ID/Range)", "%d / %.1f in", TARGET_TAG_ID, DESIRED_DISTANCE);
-                    telemetry.update();
+                    case TRAVEL:
+                        // Modular call to drive using AprilTags
+                        // FIX: Splitting this complex telemetry call to avoid the 'Cannot resolve method' error.
+                        telemetry.addData("FSM State", "1. TRAVEL: Driving to AprilTag");
+                        telemetry.addData("Target (ID/Range)", "%d / %.1f in", TARGET_TAG_ID, DESIRED_DISTANCE);
+                        telemetry.update();
 
-                    // This helper function handles the drive and state transition upon success or timeout
-                    driveToAprilTag();
-                    break;
+                        // This helper function handles the drive and state transition upon success or timeout
+                        driveToAprilTag();
+                        break;
 
-                case LAUNCH:
-                    // Placeholder for activating the launcher
-                    telemetry.addData("FSM State", "2. LAUNCH: Performing artifact launch sequence...");
-                    telemetry.update();
-                    sleep(1000);
+                    case LAUNCH:
+                        // Placeholder for activating the launcher
+                        telemetry.addData("FSM State", "2. LAUNCH: Performing artifact launch sequence...");
+                        telemetry.update();
+                        sleep(1000);
+                        /*
+                        launcherLeft.setPower(1.0);
+                        launcherRight.setPower(1.0);
+                        sleep(2000);
+                        launcherLeft.setPower(0.0);
+                        launcherRight.setPower(0.0);
+                         */
+                        // Transition to the next state
+                        current_state = AutoState.LEAVE;
+                        break;
 
-                    // Transition to the next state
-                    current_state = AutoState.LEAVE;
-                    break;
+                    case LEAVE:
+                        // Core Action: Execute the strafing movement
+                        telemetry.addData("FSM State", "3. LEAVE: Strafing away from target (%.1f in, Pwr %.2f)", STRAFE_DISTANCE_INCHES, STRAFE_SPEED);
+                        telemetry.update();
 
-                case LEAVE:
-                    // Core Action: Execute the strafing movement
-                    telemetry.addData("FSM State", "3. LEAVE: Strafing away from target (%.1f in, Pwr %.2f)", STRAFE_DISTANCE_INCHES, STRAFE_SPEED);
-                    telemetry.update();
+                        // The strafeLeft function is synchronous (blocks until finished)
+                        strafeLeft(STRAFE_DISTANCE_INCHES, STRAFE_SPEED);
 
-                    // The strafeLeft function is synchronous (blocks until finished)
-                    strafeLeft(STRAFE_DISTANCE_INCHES, STRAFE_SPEED);
+                        // Transition to the final state
+                        current_state = AutoState.AUTO_COMPLETE;
+                        break;
 
-                    // Transition to the final state
-                    current_state = AutoState.AUTO_COMPLETE;
-                    break;
-
-                default:
-                    // Safety break for unexpected state
-                    current_state = AutoState.AUTO_COMPLETE;
-                    break;
+                    default:
+                        // Safety break for unexpected state
+                        current_state = AutoState.AUTO_COMPLETE;
+                        break;
+                }
             }
-        }
+        } // The 'try-with-resources' block ensures logOnClose.close() is called when the OpMode ends
+
 
         // --- Final State Handling (AUTO_COMPLETE) ---
         if (opModeIsActive()) {
@@ -265,6 +336,7 @@ public class AutoMeet1 extends LinearOpMode {
         if (visionPortal != null) {
             visionPortal.close();
         }
+
     }
 
     /**
@@ -459,4 +531,5 @@ public class AutoMeet1 extends LinearOpMode {
         motorRightFront.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         motorRightBack.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
     }
+
 }
