@@ -224,7 +224,7 @@ public class MecanumRotateIMU extends LinearOpMode {
      *
      * @param degrees amount to turn.
      * @param power   power of motors applied
-     * @param isRight true if turn direction is right
+     * param isRight true if turn direction is right
      */
     private void rotate(int degrees, double power) {
         if (imu == null || !motorsInitialized) return; // Cannot rotate without IMU or motors
