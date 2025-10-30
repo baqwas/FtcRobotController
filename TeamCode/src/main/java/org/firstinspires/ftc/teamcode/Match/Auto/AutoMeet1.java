@@ -106,6 +106,8 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU; // NEW: Universal IMU Interface
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // Required for setup
+
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;// For reading IMU data
 import com.qualcomm.robotcore.hardware.TouchSensor;
@@ -122,6 +124,8 @@ import java.util.List;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 // --- IMU Universal Imports ---
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // NEW: For IMU mounting config
+import com.qualcomm.robotcore.util.Range;
+
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;       // NEW: To get angles from IMU
 import static org.firstinspires.ftc.robotcore.external.navigation.AngleUnit.DEGREES; // Static import for clarity
 // --------------------------
@@ -153,8 +157,11 @@ public class AutoMeet1 extends LinearOpMode {
 
     // --------------------------
     // --- Vision Components ---
-    private AprilTagProcessor aprilTag;
+    private static final boolean USE_WEBCAM = true;
+    private static final int DESIRED_TAG_ID = -1;     // Set to -1 for ANY tag.
     private VisionPortal visionPortal;
+    private AprilTagProcessor aprilTag;
+    private AprilTagDetection desiredTag = null;
 
     // --- Configuration Constants ---
     // Encoder constants for strafeLeft()
@@ -345,14 +352,20 @@ public class AutoMeet1 extends LinearOpMode {
      * Initializes the AprilTag processor and Vision Portal.
      */
     private void initAprilTag() {
-        // Create the AprilTag processor
         aprilTag = new AprilTagProcessor.Builder().build();
+        aprilTag.setDecimation(2);
 
-        // Build the Vision Portal, using the back camera
-        visionPortal = new VisionPortal.Builder()
-                .setCamera(BuiltinCameraDirection.BACK)
-                .addProcessor(aprilTag)
-                .build();
+        if (USE_WEBCAM) {
+            visionPortal = new VisionPortal.Builder()
+                    .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                    .addProcessor(aprilTag)
+                    .build();
+        } else {
+            visionPortal = new VisionPortal.Builder()
+                    .setCamera(BuiltinCameraDirection.BACK)
+                    .addProcessor(aprilTag)
+                    .build();
+        }
     }
 
     /**
@@ -362,92 +375,107 @@ public class AutoMeet1 extends LinearOpMode {
      */
     private void driveToAprilTag() {
 
+        boolean targetFound     = false;
+        double  drive           = 0;
+        double  strafe          = 0;
+        double  turn            = 0;
         ElapsedTime travelTimer = new ElapsedTime();
         boolean targetReached = false;
+
+        desiredTag  = null;
 
         // Loop continues until target reached, OpMode ends, or timeout is hit
         while (opModeIsActive() && !targetReached && travelTimer.seconds() < TRAVEL_TIMEOUT_SECONDS) {
 
             List<AprilTagDetection> currentDetections = aprilTag.getDetections();
-            AprilTagDetection targetDetection = null;
-
-            // Search for the desired tag
             for (AprilTagDetection detection : currentDetections) {
-                if (detection.id == TARGET_TAG_ID) {
-                    targetDetection = detection;
-                    break;
+                if (detection.metadata != null) {
+                    if ((DESIRED_TAG_ID < 0) || (detection.id == DESIRED_TAG_ID)) {
+                        targetFound = true;
+                        desiredTag = detection;
+                        break;
+                    }
                 }
             }
 
-            if (targetDetection != null) {
+            if (desiredTag != null) {
                 // We see the tag! Proceed with P-control driving.
+                telemetry.addData("\n>","Driving to Target\n");
+                telemetry.addData("Found", "ID %d (%s)", desiredTag.id, desiredTag.metadata.name);
+                telemetry.addData("Camera Range",  "%5.1f inches", desiredTag.ftcPose.range);
+                telemetry.addData("Camera Bearing","%3.0f degrees", desiredTag.ftcPose.bearing);
+                telemetry.addData("Camera Yaw","%3.0f degrees", desiredTag.ftcPose.yaw);
 
-                double rangeError = targetDetection.ftcPose.range - DESIRED_DISTANCE;
-                double headingError = targetDetection.ftcPose.yaw;
-                double yawError = targetDetection.ftcPose.bearing;
+                // We now get the camera's position relative to the tag, and use our known
+                // camera offsets to find the robot's center relative to the tag.
+                // NOTE: ftcPose.x is the left-right distance, and ftcPose.y is the forward-backward distance.
+                double robotCenterX = desiredTag.ftcPose.x - CAMERA_OFFSET_X;
+                double robotCenterY = desiredTag.ftcPose.y - CAMERA_OFFSET_Y;
 
-                // Check for completion criteria
-                if (Math.abs(rangeError) < RANGE_THRESHOLD && Math.abs(headingError) < HEADING_THRESHOLD) {
-                    // Success! Transition state and exit loop.
-                    targetReached = true;
-                    current_state = AutoState.LAUNCH; // <--- This is the transition you asked about.
-                    telemetry.addData("1. TRAVEL: Tag Reached!", "Moving to LAUNCH.");
-                    break;
-                }
+                // Calculate the errors we need to correct
+                double rangeError = desiredTag.ftcPose.range - DESIRED_DISTANCE;
+                double headingError = desiredTag.ftcPose.yaw;
+                double yawError = desiredTag.ftcPose.bearing;
 
-                // --- Calculate Motor Powers (P-Control) ---
-                double drive = rangeError * SPEED_GAIN;
-                // Yaw error controls strafing; add the fixed camera offset as a constant strafe bias
-                double strafe = -(yawError * STRAFE_GAIN) + CAMERA_OFFSET_X;
-                double turn = headingError * TURN_GAIN;
 
-                // Cap the power to the maximum speed
-                drive = Math.max(-MAX_AUTO_SPEED, Math.min(drive, MAX_AUTO_SPEED));
-                strafe = Math.max(-MAX_AUTO_SPEED, Math.min(strafe, MAX_AUTO_SPEED));
-                turn = Math.max(-MAX_AUTO_SPEED, Math.min(turn, MAX_AUTO_SPEED));
+                // Use the speed and turn "gains" to calculate the motor powers.
+                drive  = Range.clip(rangeError * SPEED_GAIN, -MAX_AUTO_SPEED, MAX_AUTO_SPEED);
+                strafe = Range.clip(headingError * STRAFE_GAIN, -HEADING_THRESHOLD, HEADING_THRESHOLD);
+                turn   = Range.clip(headingError * TURN_GAIN, -RANGE_THRESHOLD, RANGE_THRESHOLD);
 
-                // Apply power to the motors (Mecanum equations)
-                motorLeftFront.setPower(drive + strafe + turn);
-                motorRightFront.setPower(drive - strafe - turn);
-                motorLeftBack.setPower(drive - strafe + turn);
-                motorRightBack.setPower(drive + strafe - turn);
-
-                // Telemetry Updates
-                // FIX: Clarifying the telemetry addData call by adding the format string argument explicitly
-                telemetry.addData("1. TRAVEL: Tracking Tag", "ID %d", targetDetection.id);
-                telemetry.addData("Target Range", "%.1f in", DESIRED_DISTANCE);
-                telemetry.addData("Current Range", "%.2f in", targetDetection.ftcPose.range);
-                telemetry.addData("Errors (R/Y/B)", "%.2f / %.2f / %.2f", rangeError, headingError, yawError);
-                telemetry.addData("Drive (D/S/T)", "%.2f / %.2f / %.2f", drive, strafe, turn);
+                telemetry.addData("Robot","Drive %5.2f, Strafe %5.2f, Turn %5.2f ", drive, strafe, turn);
+                telemetry.addData("Robot Position", "(X: %5.2f, Y: %5.2f)", robotCenterX, robotCenterY);
 
             } else {
-                // Tag not detected, stop movement and keep searching.
-                motorLeftFront.setPower(0);
-                motorLeftBack.setPower(0);
-                motorRightFront.setPower(0);
-                motorRightBack.setPower(0);
-                //telemetry.addData("1. TRAVEL: Searching for Tag %d (Time left: %.1f)", TARGET_TAG_ID, TRAVEL_TIMEOUT_SECONDS - travelTimer.seconds());
-                telemetry.addData("1. TRAVEL: Searching for Tag %d (Time left: %.1f)", TARGET_TAG_ID);
-
-                sleep(20);
+                // If the target is not found, stop the robot.
+                drive = 0;
+                strafe = 0;
+                turn = 0;
+                telemetry.addData("Status", "Target Not Found - Stopping");
             }
             telemetry.update();
-        }
 
-        // --- Final Motor Stop and Timeout Handling ---
-        // Stop all drive motors definitively after loop exit
-        motorLeftFront.setPower(0);
-        motorLeftBack.setPower(0);
-        motorRightFront.setPower(0);
-        motorRightBack.setPower(0);
 
-        // If the loop finished due to timeout and not reaching the target, transition to a safe state
-        if (opModeIsActive() && !targetReached) {
-            telemetry.addData("FSM State", "1. TRAVEL: TIMEOUT! %.1f seconds elapsed. Skipping LAUNCH, moving to LEAVE.", TRAVEL_TIMEOUT_SECONDS);
-            current_state = AutoState.LEAVE;
+            // Apply desired axes motions to the drivetrain.
+            moveRobot(drive, strafe, turn);
+            sleep(10);
         }
     }
 
+    /**
+     * Move robot according to desired axes motions
+     * <p>
+     * Positive X is forward
+     * <p>
+     * Positive Y is strafe left
+     * <p>
+     * Positive Yaw is counter-clockwise
+     */
+    public void moveRobot(double x, double y, double yaw) {
+        // Calculate wheel powers.
+        double powerLeftFront    =  x - y - yaw;
+        double powerRightFront   =  x + y + yaw;
+        double powerLeftBack     =  x + y - yaw;
+        double powerRightBack    =  x - y + yaw;
+
+        // Normalize wheel powers to be less than 1.0
+        double max = Math.max(Math.abs(powerLeftFront), Math.abs(powerRightFront));
+        max = Math.max(max, Math.abs(powerLeftBack));
+        max = Math.max(max, Math.abs(powerRightBack));
+
+        if (max > 1.0) {
+            powerLeftFront /= max;
+            powerRightFront /= max;
+            powerLeftBack /= max;
+            powerRightBack  /= max;
+        }
+
+        // Send powers to the wheels.
+        motorLeftFront.setPower(powerLeftFront);
+        motorRightFront.setPower(powerRightFront);
+        motorLeftBack.setPower(powerLeftBack);
+        motorRightBack.setPower(powerRightBack);
+    }
 
     /**
      * Resets the motor encoders to 0 and sets the run mode to RUN_USING_ENCODER.

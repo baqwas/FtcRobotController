@@ -35,6 +35,7 @@
 package org.firstinspires.ftc.teamcode.Holonomic;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -57,6 +58,7 @@ import org.firstinspires.ftc.teamcode.Control.PIDController;
  * Mecanum wheels rotate a precise number of degrees using an IMU and PID.
  */
 @Autonomous(name = "Mecanum Rotate PID", group = "Final")
+@Disabled
 public class MecanumRotatePID extends LinearOpMode {
     private static final String TAG = MecanumRotatePID.class.getSimpleName();
     private final Datalog datalog = new Datalog(TAG);
