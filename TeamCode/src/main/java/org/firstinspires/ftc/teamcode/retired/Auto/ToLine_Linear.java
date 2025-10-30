@@ -29,239 +29,266 @@
 
 package org.firstinspires.ftc.teamcode.retired.Auto;
 
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.ColorSensor; // Added for the Line Tracking use case
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
-import com.qualcomm.robotcore.hardware.SwitchableLight;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+
+// Universal IMU Imports
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor;
 
 /**
- * This file illustrates the concept of driving up to a line and then stopping.
- * The code is structured as a LinearOpMode
- *
- * The Sensor used here can be a REV Color Sensor V2 or V3.  Make sure the white LED is turned on.
- * The sensor can be plugged into any I2C port, and must be named "sensor_color" in the active configuration.
- *
- *   Depending on the height of your color sensor, you may want to set the sensor "gain".
- *   The higher the gain, the greater the reflected light reading will be.
- *   Use the SensorColor sample in this folder to determine the minimum gain value that provides an
- *   "Alpha" reading of 1.0 when you are on top of the white line.  In this sample, we use a gain of 15
- *   which works well with a Rev V2 color sensor
- *
- *   Setting the correct WHITE_THRESHOLD value is key to stopping correctly.
- *   This should be set halfway between the bare-tile, and white-line "Alpha" values.
- *   The reflected light value can be read on the screen once the OpMode has been INIT, but before it is STARTED.
- *   Move the sensor on and off the white line and note the min and max readings.
- *   Edit this code to make WHITE_THRESHOLD halfway between the min and max.
- *
- *   Use Android Studio to Copy this Class, and Paste it into your team's code folder with a new name.
- *   Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list
+ * Mecanum wheels drive forward using encoders until a line is detected by a color sensor.
  */
-
-@Autonomous(name="Color: Auto Drive To Color Line", group="Robot")
+@Autonomous(name="Mecanum: To Line Linear", group="Encoder")
 @Disabled
 public class ToLine_Linear extends LinearOpMode {
 
-    /* Declare OpMode members. */
-    // Declare OpMode members
-    Datalog datalog = new Datalog("ToLine_Linear_01");
-    // for data logging use in this specific OpMode since IMU is not used directly
-    private IMU imu             = null;      // Control/Expansion Hub IMU
-    private final DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
-    String[] motorLabels = {
-            "motorLeftFront",           // port 0 Control Hub
-            "motorLeftBack",            // port 1 Control Hub
-            "motorRightFront",          // port 2 Control Hub
-            "motorRightBack"            // port 3 Control Hub
-    };
+    private static final String TAG = ToLine_Linear.class.getSimpleName();
 
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "SetSpeed", "Direction", "Distance",
+            "TicksLF", "TicksLB", "TicksRF", "TicksRB",
+            "CurrentSpeedLF", "CurrentSpeedLB", "CurrentSpeedRF", "CurrentSpeedRB",
+            "Heading", "LineDetected", "Red", "Green", "Blue", "Battery" // Added Color and Line fields
+    );
 
-    /** The colorSensor field will contain a reference to our color sensor hardware object */
-    NormalizedColorSensor colorSensor;
+    // Motor and Encoder Constants
+    private static final double COUNTS_PER_MOTOR_REV = 537.7; // goBILDA 5203 series yellow jacket motor
+    private static final double DRIVE_GEAR_REDUCTION = 1.0;
+    private static final double WHEEL_DIAMETER_MM    = 86.0;
+    private static final double MM_TO_INCH           = 0.0393701;
+    private static final double WHEEL_DIAMETER_INCHES= WHEEL_DIAMETER_MM * MM_TO_INCH;
+    private static final double COUNTS_PER_INCH      = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_INCHES * Math.PI);
+    private static final int MAX_TICKS = (int)(48.0 * COUNTS_PER_INCH); // Max travel of 48 inches (just a safety limit)
+    private static final int LINE_THRESHOLD_RED = 250; // Example threshold for Red line detection
 
-    static final double     WHITE_THRESHOLD = 0.5;  // spans between 0.0 - 1.0 from dark to light
-    static final double     APPROACH_SPEED  = 0.25;
+    // Motor and Sensor control variables
+    private DcMotorEx[] motor = new DcMotorEx[4];
+    private static final String[] MOTOR_NAMES = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
+    private ColorSensor colorSensor = null; // Assumes a sensor named "sensor_color"
+
+    // IMU and Angle tracking variables
+    private IMU imu = null;
+
+    // Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
+
+    private final ElapsedTime runtime = new ElapsedTime();
 
     @Override
     public void runOpMode() {
 
-        // Initialize the drive system variables.
-        //leftDrive  = hardwareMap.get(DcMotor.class, "left_drive");
-        //rightDrive = hardwareMap.get(DcMotor.class, "right_drive");
-
-        // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
-        // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
-        // Note: The settings here assume direct drive on left and right wheels.  Gear Reduction or 90 Deg drives may require direction flips
-        //leftDrive.setDirection(DcMotor.Direction.REVERSE);
-        //rightDrive.setDirection(DcMotor.Direction.FORWARD);
-
-        // If there are encoders connected, switch to RUN_USING_ENCODER mode for greater accuracy
-        // leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        // rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        // Initialize the drive system variables
-        int inchesLeft, inchesRight;
-        // Initialize the hardware variables
-        // define initialization values for IMU, and then initialize it.
-        imu = hardwareMap.get(IMU.class, "imu");
-
-        IMU.Parameters myIMUparameters;
-
-        new IMU.Parameters(
-                new RevHubOrientationOnRobot(
-                        RevHubOrientationOnRobot.LogoFacingDirection.FORWARD,
-                        RevHubOrientationOnRobot.UsbFacingDirection.UP
-                )
-        );
-
-        /* The next two lines define Hub orientation.
-         * The Default Orientation (shown) is when a hub is mounted horizontally with the printed logo pointing UP and the USB port pointing FORWARD.
-         *
-         * To Do:  EDIT these two lines to match YOUR mounting configuration.
-         */
-        RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.FORWARD;
-        RevHubOrientationOnRobot.UsbFacingDirection  usbDirection  = RevHubOrientationOnRobot.UsbFacingDirection.UP;
-
-        RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
-
-        // Now initialize the IMU with this mounting orientation
-        // Note: if you choose two conflicting directions, this initialization will cause a code exception.
-        imu.initialize(new IMU.Parameters(orientationOnRobot));
-        YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
-
-        // Get a reference to our sensor object. It's recommended to use NormalizedColorSensor over
-        // ColorSensor, because NormalizedColorSensor consistently gives values between 0 and 1, while
-        // the values you get from ColorSensor are dependent on the specific sensor you're using.
-        colorSensor = hardwareMap.get(NormalizedColorSensor.class, "sensorColor");
-
-        // If necessary, turn ON the white LED (if there is no LED switch on the sensor)
-        if (colorSensor instanceof SwitchableLight) {
-            ((SwitchableLight)colorSensor).enableLight(true);
-        }
-
-        // Some sensors allow you to set your light sensor gain for optimal sensitivity...
-        // See the SensorColor sample in this folder for how to determine the optimal gain.
-        // A gain of 15 causes a Rev Color Sensor V2 to produce an Alpha value of 1.0 at about 1.5" above the floor.
-        colorSensor.setGain(15);
-
-        // Wait for driver to press PLAY)
-        // Abort this loop is started or stopped.
-        while (opModeInInit()) {
-
-            // Send telemetry message to signify robot waiting;
-            telemetry.addData("Status", "Ready to drive to white line.");    //
-
-            // Display the light level while we are waiting to start
-            getBrightness();
-        }
-
-        // Start the robot moving forward, and then begin looking for a white line.
-        //leftDrive.setPower(APPROACH_SPEED);
-        //rightDrive.setPower(APPROACH_SPEED);
-
-        // run until the white line is seen OR the driver presses STOP;
-        while (opModeIsActive() && (getBrightness() < WHITE_THRESHOLD)) {
-            sleep(5);
-        }
-
-        // Stop all motors
-        setMotorSpeed(0.0);  // stop all motors
-    }
-
-    // to obtain reflected light, read the normalized values from the color sensor.  Return the Alpha channel.
-    double getBrightness() {
-        NormalizedRGBA colors = colorSensor.getNormalizedColors();
-        telemetry.addData("Light Level (0 to 1)",  "%4.2f", colors.alpha);
+        // --- HARDWARE INITIALIZATION ---
+        telemetry.addData("Status", "Initializing Hardware...");
         telemetry.update();
 
-        return colors.alpha;
-    }
+        // Initialize Motors
+        for (int i = 0; i < MOTOR_NAMES.length; i++) {
+            try {
+                motor[i] = hardwareMap.get(DcMotorEx.class, MOTOR_NAMES[i]);
+                motor[i].setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+                motor[i].setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+                motor[i].setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            } catch (Exception e) {
+                telemetry.addData("ERROR", "Motor %s not found. Check configuration!", MOTOR_NAMES[i]);
+            }
+        }
+        motor[0].setDirection(DcMotor.Direction.FORWARD);
+        motor[1].setDirection(DcMotor.Direction.FORWARD);
+        motor[2].setDirection(DcMotor.Direction.REVERSE);
+        motor[3].setDirection(DcMotor.Direction.REVERSE);
 
+        // Initialize Color Sensor
+        try {
+            colorSensor = hardwareMap.get(ColorSensor.class, "sensor_color");
+            telemetry.addData("Status", "Color Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("WARNING", "Color sensor 'sensor_color' not found.");
+            colorSensor = null;
+        }
+
+        // Initialize IMU
+        try {
+            imu = hardwareMap.get(IMU.class, "imu");
+            RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
+            RevHubOrientationOnRobot.UsbFacingDirection usbDirection = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+            RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
+            IMU.Parameters parameters = new IMU.Parameters(orientationOnRobot);
+            imu.initialize(parameters);
+            imu.resetYaw();
+            telemetry.addData("Status", "IMU Initialized and Yaw Reset");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "IMU (name 'imu') not found. Check configuration!");
+        }
+
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
+        telemetry.update();
+
+
+        // Wait for the start button
+        telemetry.addData("Status", "Initialized. Press PLAY.");
+        telemetry.update();
+        waitForStart();
+        runtime.reset();
+
+        if (isStopRequested()) {
+            datalogger.close();
+            return;
+        }
+
+        // --- AUTONOMOUS SEQUENCE ---
+        driveToLine(0.4, 4.0); // Drive at 0.4 power, max 4.0 seconds
+
+        // Final Stop
+        fullStop();
+        logDatalogger("STOPPED", 0.0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, false, 0, 0, 0);
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
+    }
 
     /**
-     * helper method to set a common speed for all motors in the drivetrain
-     * @param speed setting applied to all motors
+     * Drive the robot forward using encoders until a line is detected or max distance/time is reached.
+     * @param speed The target motor power (0.0 to 1.0)
+     * @param timeoutS Maximum time the movement can take.
      */
-    private void setMotorSpeed(double speed) {
-        for (DcMotorEx dcMotorEx : motor) {
-            dcMotorEx.setPower(speed);
+    private void driveToLine(double speed, double timeoutS) {
+        if (!opModeIsActive()) return;
+
+        int startPosition = motor[0].getCurrentPosition();
+        int targetPosition = startPosition + MAX_TICKS;
+
+        // Set Target Position (Max distance safety)
+        motor[0].setTargetPosition(targetPosition);
+        motor[1].setTargetPosition(targetPosition);
+        motor[2].setTargetPosition(targetPosition);
+        motor[3].setTargetPosition(targetPosition);
+
+        // Run to position
+        for (DcMotorEx dcMotor : motor) {
+            dcMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        }
+
+        // Reset the timeout time
+        runtime.reset();
+
+        // Start motion
+        motor[0].setPower(speed);
+        motor[1].setPower(speed);
+        motor[2].setPower(speed);
+        motor[3].setPower(speed);
+
+        boolean lineDetected = false;
+
+        // Keep looping while we are still active, and there is time left, and both motors are running.
+        while (opModeIsActive() && (runtime.seconds() < timeoutS) && motor[0].isBusy()) {
+
+            int red = 0, green = 0, blue = 0;
+            if (colorSensor != null) {
+                red = colorSensor.red();
+                green = colorSensor.green();
+                blue = colorSensor.blue();
+                if (red > LINE_THRESHOLD_RED) {
+                    lineDetected = true;
+                }
+            }
+
+            if (lineDetected) {
+                break; // Stop when the line is detected
+            }
+
+            // Get current heading for logging
+            double currentHeading = 0.0;
+            if (imu != null) {
+                YawPitchRollAngles currentOrientation = imu.getRobotYawPitchRollAngles();
+                currentHeading = currentOrientation.getYaw(AngleUnit.DEGREES);
+            }
+
+            // Log data
+            double currentDistance = (motor[0].getCurrentPosition() - startPosition) / COUNTS_PER_INCH;
+
+            logDatalogger("TO_LINE", speed, currentDistance, 1.0,
+                    motor[0].getCurrentPosition(), motor[1].getCurrentPosition(),
+                    motor[2].getCurrentPosition(), motor[3].getCurrentPosition(),
+                    motor[0].getVelocity(), motor[1].getVelocity(),
+                    motor[2].getVelocity(), motor[3].getVelocity(),
+                    currentHeading, lineDetected, red, green, blue);
+
+            telemetry.addData("Status", "Driving to line...");
+            telemetry.addData("Current Pos", "%7d", motor[0].getCurrentPosition());
+            telemetry.addData("Color (R/G/B)", "%d / %d / %d", red, green, blue);
+            telemetry.update();
+        }
+
+        // Stop all motion
+        fullStop();
+
+        telemetry.addData("Status", lineDetected ? "Line Detected!" : "Timeout Reached");
+        telemetry.update();
+        sleep(500);
+    }
+
+    /**
+     * Function to stop power to all defined motors.
+     */
+    private void fullStop() {
+        for (DcMotorEx dcMotor : motor) {
+            dcMotor.setPower(0.0);
+            dcMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            dcMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER); // Revert to running with encoder for next move
         }
     }
 
     /**
-     * This class encapsulates all the fields that will go into the datalog.
+     * Internal helper to log the current robot state.
      */
-    public static class Datalog
-    {
-        // The underlying datalogger object - it cares only about an array of loggable fields
-        private final Datalogger datalogger;
+    private void logDatalogger(String status, double setSpeed, double distance, double direction,
+                               int ticksLF, int ticksLB, int ticksRF, int ticksRB,
+                               double velocityLF, double velocityLB, double velocityRF, double velocityRB,
+                               double heading, boolean lineDetected, int red, int green, int blue) {
+        String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
 
-        // These are all of the fields that we want in the datalog.
-        // Note that order here is NOT important. The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus     = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField setSpeed         = new Datalogger.GenericField("Initial Speed");
-        public Datalogger.GenericField direction        = new Datalogger.GenericField("Direction");
-        public Datalogger.GenericField distance         = new Datalogger.GenericField("Distance");
-        public Datalogger.GenericField ticks0           = new Datalogger.GenericField("Ticks 0");
-        public Datalogger.GenericField ticks1           = new Datalogger.GenericField("Ticks 1");
-        public Datalogger.GenericField ticks2           = new Datalogger.GenericField("Ticks 2");
-        public Datalogger.GenericField ticks3           = new Datalogger.GenericField("Ticks 3");
-        public Datalogger.GenericField currentSpeed0    = new Datalogger.GenericField("Current Speed 0");
-        public Datalogger.GenericField currentSpeed1    = new Datalogger.GenericField("Current Speed 1");
-        public Datalogger.GenericField currentSpeed2    = new Datalogger.GenericField("Current Speed 2");
-        public Datalogger.GenericField currentSpeed3    = new Datalogger.GenericField("Current Speed 3");
-        public Datalogger.GenericField heading          = new Datalogger.GenericField("Heading");
-
-        /**
-         * Initializer for class
-         * @param name filename for output log
-         */
-        public Datalog(String name)
-        {
-            // Build the underlying datalog object
-            datalogger = new Datalogger.Builder()
-
-                    // Pass through the filename
-                    .setFilename(name)
-
-                    // Request an automatic timestamp field
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS)
-
-                    // Tell it about the fields we care to log.
-                    // Note that order *IS* important here! The order in which we list
-                    // the fields is the order in which they will appear in the log.
-                    .setFields(
-                            opModeStatus,
-                            setSpeed,
-                            direction,
-                            distance,
-                            ticks0,
-                            ticks1,
-                            ticks2,
-                            ticks3,
-                            currentSpeed0,
-                            currentSpeed1,
-                            currentSpeed2,
-                            currentSpeed3,
-                            heading
-                    )
-                    .build();
-        }
-
-        /**
-         * Tell the datalogger to gather the values of the fields
-         * and write a new line in the log.
-         */
-        public void writeLine()
-        {
-            datalogger.writeLine();
-        }
+        // 2. UPDATED LOGGING CALL
+        datalogger.log(
+                status,
+                String.format("%.2f", setSpeed),
+                String.format("%.2f", direction),
+                String.format("%.2f", distance),
+                String.valueOf(ticksLF),
+                String.valueOf(ticksLB),
+                String.valueOf(ticksRF),
+                String.valueOf(ticksRB),
+                String.format("%.2f", velocityLF),
+                String.format("%.2f", velocityLB),
+                String.format("%.2f", velocityRF),
+                String.format("%.2f", velocityRB),
+                String.format("%.2f", heading),
+                String.valueOf(lineDetected),
+                String.valueOf(red),
+                String.valueOf(green),
+                String.valueOf(blue),
+                batteryVoltage
+        );
     }
+
+    // 3. REMOVED THE ENTIRE NESTED 'Datalog' CLASS
 }

@@ -26,145 +26,135 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 package org.firstinspires.ftc.teamcode.Control;
 
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
-import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor; // NEW IMPORT
 
 /**
- * This OpMode demonstrates a simple bang-bang control system for a flywheel motor,
- * with enhanced data logging to analyze performance using a structured Datalogger utility
- * Bang-bang control is a very simple form of feedback control where the actuator
- * is either fully on or fully off, depending on whether a setpoint is met.
- * This example uses the concept of a "target velocity" for the flywheel. The code
- * will continuously check the motor's current velocity. If the current velocity
- * is below the target, the motor will be set to full power (1.0). If the current
- * velocity is at or above the target, the motor will be turned off (0.0).
- * This is a simple but effective way to maintain a target speed.
- * For more advanced and stable control, you would use a PID controller.
+ * BangBangController is a simple demonstration of an on-off control system
+ * for maintaining a target velocity on a motor. It also demonstrates the use
+ * of the updated Datalogger class.
  */
-@TeleOp(name = "Bang-Bang Control", group = "Control")
+@TeleOp(name="Control: BangBang", group="Concept")
 @Disabled
-public class BangBangController extends OpMode {
+public class BangBangController extends LinearOpMode {
 
-    // Declare a motor object. We use DcMotorEx for velocity control.
-    private DcMotorEx flywheelMotor = null;
+    private static final String TAG = BangBangController.class.getSimpleName();
 
-    // Define the target velocity in ticks per second.
-    // FTCRobotController SDK typically uses encoder ticks for velocity.
-    // You will need to determine the appropriate value for your specific motor and gear ratio.
-    private final double TARGET_VELOCITY = 2000; // Example target in ticks/sec
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "CurrentVelocity", "TargetVelocity", "MotorPower", "Battery"
+    );
 
-    // A timer to display some information on the telemetry.
-    private ElapsedTime runtime = new ElapsedTime();
+    // Motor and Control variables
+    private DcMotorEx motor = null;
+    private final ElapsedTime runtime = new ElapsedTime();
+    private double targetVelocity = 1000; // Target velocity in ticks/sec
 
-    // Data logging variables using the provided Datalogger utility.
-    private Datalog datalog;
-
-    @Override
-    public void init() {
-        // Get the motor from the hardware map.
-        flywheelMotor = hardwareMap.get(DcMotorEx.class, "motorFlywheel");
-
-        // Set the motor direction. You might need to change this depending on your robot's wiring.
-        flywheelMotor.setDirection(DcMotor.Direction.FORWARD);
-
-        // This is crucial for velocity control. The motor will use the built-in
-        // encoder to try and maintain a set velocity.
-        flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        // Set the zero power behavior to BRAKE. This helps the motor stop faster.
-        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        // Initialize the new Datalogger
-        datalog = new Datalog("FlywheelBangBang_Data");
-        datalog.opModeStatus.set("Initialized");
-        datalog.targetVelocity.set(TARGET_VELOCITY);
-        datalog.writeLine();
-
-        // Tell the user everything is ready.
-        telemetry.addData("Status", "Initialized");
-        telemetry.addData("Target Velocity", "%.2f ticks/sec", TARGET_VELOCITY);
-    }
+    // NEW: Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
 
     @Override
-    public void loop() {
-        // Get the current velocity of the flywheel motor.
-        double currentVelocity = flywheelMotor.getVelocity();
-        double motorPower;
+    public void runOpMode() {
 
-        // Implement the bang-bang control logic.
-        if (currentVelocity < TARGET_VELOCITY) {
-            // If the current velocity is below the target, turn the motor on at full power.
-            motorPower = 1.0;
-            datalog.opModeStatus.set("Running (motor ON)");
-        } else {
-            // If the current velocity is at or above the target, turn the motor off.
-            motorPower = 0.0;
-            datalog.opModeStatus.set("Running (motor OFF)");
-        }
-
-        flywheelMotor.setPower(motorPower);
-
-        // Update and log the data using the Datalog utility.
-        datalog.currentVelocity.set(currentVelocity);
-        datalog.motorPower.set(motorPower);
-        datalog.writeLine();
-
-        // Add useful information to the telemetry.
-        telemetry.addData("Status", datalog.opModeStatus);
-        telemetry.addData("Current Velocity", "%.2f ticks/sec", currentVelocity);
-        telemetry.addData("Motor Power", "%.2f", motorPower);
+        // --- HARDWARE INITIALIZATION ---
+        telemetry.addData("Status", "Initializing Hardware...");
         telemetry.update();
-    }
 
-    @Override
-    public void stop() {
-        // Stop the motor when the OpMode is stopped.
-        flywheelMotor.setPower(0);
-        // The Datalogger utility automatically handles closing the file.
-        datalog.opModeStatus.set("Stopped");
-        datalog.writeLine();
-    }
-
-    /**
-     * This class encapsulates all the fields that will go into the datalog.
-     * It mirrors the Datalog class from the provided example.
-     */
-    public static class Datalog {
-        // The underlying datalogger object
-        private final Datalogger datalogger;
-
-        // These are all of the fields that we want in the datalog.
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField currentVelocity = new Datalogger.GenericField("CurrentVelocity");
-        public Datalogger.GenericField targetVelocity = new Datalogger.GenericField("TargetVelocity");
-        public Datalogger.GenericField motorPower = new Datalogger.GenericField("MotorPower");
-
-        public Datalog(String name) {
-            // Build the underlying datalog object
-            datalogger = new Datalogger.Builder()
-                    .setFilename(name)
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS)
-                    .setFields(
-                            opModeStatus,
-                            currentVelocity,
-                            targetVelocity,
-                            motorPower
-                    )
-                    .build();
+        try {
+            motor = hardwareMap.get(DcMotorEx.class, "motor");
+            motor.setDirection(DcMotorSimple.Direction.FORWARD);
+            // Set motor to RUN_USING_ENCODER to enable velocity control (even if not using a built-in PID)
+            motor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            motor.setPower(0);
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Motor 'motor' not found. Check configuration.");
+            telemetry.update();
+            sleep(3000);
+            return;
         }
 
-        // Tell the datalogger to gather the values of the fields
-        // and write a new line in the log.
-        public void writeLine() {
-            datalogger.writeLine();
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
         }
+        telemetry.update();
+
+        telemetry.addData("Status", "Initialized. Press PLAY.");
+        telemetry.update();
+
+        waitForStart();
+        runtime.reset();
+
+        if (isStopRequested()) {
+            datalogger.close();
+            return;
+        }
+
+        while (opModeIsActive()) {
+
+            // --- USER INPUT FOR TARGET VELOCITY ---
+            if (gamepad1.dpad_up) {
+                targetVelocity += 50; // Increase target velocity
+            } else if (gamepad1.dpad_down) {
+                targetVelocity -= 50; // Decrease target velocity
+            }
+            // Clamp target velocity to a reasonable range (e.g., 0 to 2500)
+            targetVelocity = Math.max(0, Math.min(2500, targetVelocity));
+
+            // --- BANG-BANG CONTROL LOGIC ---
+            double currentVelocity = motor.getVelocity();
+            double motorPower;
+
+            if (currentVelocity < targetVelocity) {
+                motorPower = 1.0; // Full power ON
+            } else {
+                motorPower = 0.0; // Full power OFF
+            }
+
+            // Apply Power
+            motor.setPower(motorPower);
+
+            // --- TELEMETRY ---
+            telemetry.addData("Status", "Running");
+            telemetry.addData("Target Velocity (ticks/s)", "%.0f", targetVelocity);
+            telemetry.addData("Current Velocity (ticks/s)", "%.2f", currentVelocity);
+            telemetry.addData("Motor Power", "%.2f", motorPower);
+            telemetry.update();
+
+            // --- DATALOGGING ---
+            String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
+
+            // 2. UPDATED LOGGING CALL
+            datalogger.log(
+                    "RUNNING",
+                    String.format("%.2f", currentVelocity),
+                    String.format("%.0f", targetVelocity),
+                    String.format("%.2f", motorPower),
+                    batteryVoltage
+            );
+        }
+
+        // Stop motor and close datalogger when OpMode stops
+        motor.setPower(0);
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
+    // 3. REMOVED THE ENTIRE NESTED 'Datalog' CLASS (was at the end of the file)
 }

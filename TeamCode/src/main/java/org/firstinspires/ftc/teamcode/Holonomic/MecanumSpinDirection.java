@@ -47,13 +47,13 @@
  * </p>
  * <p>
  * forward travel:
- *       ^                   ^
- *       |                   |
- *       0 left front        2 right front
- *                 X
- *       ^                   ^
- *       |                   |
- *       1 left back         3 right back
+ * ^                   ^
+ * |                   |
+ * 0 left front        2 right front
+ * X
+ * ^                   ^
+ * |                   |
+ * 1 left back         3 right back
  *
  * hard coded numbers to avoid the use of enum construct for such a simple program
  * motor positions:
@@ -74,16 +74,16 @@
  *
  * @see https://docs.revrobotics.com/rev-control-system/sensors/encoders/motor-based-encoders
  * HD Hex Motor (REV-41-1291) Encoder Specifications
- *      HD Hex Motor Reduction                  Bare Motor      40:1            20:1
- *      Free speed, RPM                         6,000           150             300
- *      Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
- *      Ticks per rotation of output shaft      28              1120            560
+ * HD Hex Motor Reduction                  Bare Motor      40:1            20:1
+ * Free speed, RPM                         6,000           150             300
+ * Cycles per rotation of encoder shaft    28 (7 Rises)    28 (7 Rises)    28 (7 Rises)
+ * Ticks per rotation of output shaft      28              1120            560
  * TICKS_PER_MOTOR_REV = 560            REV HD Hex UltraPlanetary 20:1 cartridge
  * DRIVE_GEAR_REDUCTION = 1.0
  * WHEEL_DIAMETER_MM = 75.0             REV Mecanum wheel
  * MM_TO_INCH = 0.03937008
  * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
- *                = 56.9887969189608
+ * = 56.9887969189608
  * <p>
  * Hardware map
  * Device name      Control Hub setting
@@ -212,6 +212,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
 import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 @TeleOp(name = "Mecanum: Spin Direction", group = "Test")
@@ -220,7 +221,11 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 public class MecanumSpinDirection extends LinearOpMode {
 
     private static final  String TAG = MecanumSpinDirection.class.getSimpleName();
-    Datalog datalog = new Datalog(TAG); // data logging for offline analysis/debugging
+    // Use the Datalogger directly and define the headers
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "Loop Counter", "Yaw", "Pitch", "Roll", "Global Angle", "Delta Angle", "Battery" // Headers
+    );
 
     static final double TICKS_PER_INCH = 56.9887969189608; // REV Robotics motor and wheel specific!
 
@@ -230,6 +235,7 @@ public class MecanumSpinDirection extends LinearOpMode {
     double globalAngle, power = .40, correction;
     boolean aButton, bButton, touched;
     private final ElapsedTime runtime = new ElapsedTime();
+    private BatteryVoltageSensor batterySensor = null; // Initialize in runOpMode
 
     // motor entities for drivetrain
     // Array declaration moved here, initialization moved to runOpMode for safety
@@ -240,6 +246,7 @@ public class MecanumSpinDirection extends LinearOpMode {
     int[] motorTicks = {0, 0, 0, 0};    // current tick count from encoder for the respective motors
     double[] motorPower = {0.0, 0.0, 0.0, 0.0};
     int drivetrainSteps = 0;
+    double deltaAngle; // Declared here for easy access in logging
 
     /**
      * Function to travel a linear distance. This function will require further tuning.
@@ -380,6 +387,13 @@ public class MecanumSpinDirection extends LinearOpMode {
             telemetry.addData("ERROR", "IMU (name 'imu') not found. Check configuration!");
         }
 
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
         telemetry.update();
 
         // Critical check: stop if drive motors are missing
@@ -387,6 +401,8 @@ public class MecanumSpinDirection extends LinearOpMode {
             telemetry.addData("FATAL ERROR", "Drive motors missing. OpMode cannot run.");
             telemetry.update();
             waitForStart();
+            // Critical: Close the datalogger even on early exit
+            datalogger.close();
             return; // Exit if critical hardware is missing
         }
 
@@ -406,8 +422,10 @@ public class MecanumSpinDirection extends LinearOpMode {
         telemetry.update();
         sleep(1000); // Reduce sleep time from 60000 to 1000 for practicality
 
-        if (isStopRequested())          // has stopping opMode been requested
+        if (isStopRequested()) {         // has stopping opMode been requested
+            datalogger.close(); // Critical: Close the datalogger on stop request
             return;
+        }
 
         // --- MAIN TELEOP LOOP ---
         while (opModeIsActive()) {
@@ -446,13 +464,17 @@ public class MecanumSpinDirection extends LinearOpMode {
                     telemetry.addData("Pitch", "%.2f Deg", pitchAngle);
                     telemetry.addData("Roll", "%.2f Deg", rollAngle);
 
-                    // Datalogging (Protected by IMU check)
-                    datalog.loopCounter.set(drivetrainSteps++);
-                    datalog.yaw.set(yawAngle);
-                    datalog.pitch.set(pitchAngle);
-                    datalog.roll.set(rollAngle);
-                    datalog.globalAngle.set(globalAngle); // globalAngle updated in getAngle/rotate
-                    datalog.writeLine();            // A timestamp is applied to the record when writing
+                    // Datalogging (Using new Datalogger API)
+                    String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
+                    datalogger.log(
+                            String.valueOf(drivetrainSteps++), // Loop Counter
+                            String.format("%.4f", yawAngle),
+                            String.format("%.4f", pitchAngle),
+                            String.format("%.4f", rollAngle),
+                            String.format("%.4f", globalAngle),
+                            String.format("%.4f", deltaAngle),
+                            batteryVoltage
+                    );
                 }
             } else {
                 telemetry.addData("IMU Status", "IMU Not Available");
@@ -461,6 +483,9 @@ public class MecanumSpinDirection extends LinearOpMode {
             telemetry.addData("Status", "Running");
             telemetry.update();
         }
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
 
     /**
@@ -495,7 +520,7 @@ public class MecanumSpinDirection extends LinearOpMode {
         // Safety check if the new angle reading is null
         if (angles == null) return globalAngle;
 
-        double deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
+        deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
 
         if (deltaAngle < -180)
             deltaAngle += 360;
@@ -506,8 +531,7 @@ public class MecanumSpinDirection extends LinearOpMode {
 
         lastAngles = angles;
 
-        // Datalogging for deltaAngle (moved from main loop to Datalog class constructor for safety)
-        datalog.deltaAngle.set(deltaAngle);
+        // deltaAngle is now set and can be logged in the main loop
 
         return globalAngle;
     }
@@ -586,57 +610,5 @@ public class MecanumSpinDirection extends LinearOpMode {
         fullStop();
 
         resetAngle();                          // reset angle tracking on new heading
-    }
-
-    /**
-     * This class encapsulates all the fields that will go into the datalog.
-     */
-    private static class Datalog {
-        /**
-         * The underlying datalogger object - it cares only about an array of loggable fields
-         * The fields for this OpCode are:
-         * yaw, pitch, roll & battery - in that order
-         */
-
-        private final Datalogger datalogger;
-        // The fields whose values will be written to the storage file
-        // Note that order here is NOT important
-        // The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField loopCounter = new Datalogger.GenericField("Loop Counter");
-        public Datalogger.GenericField yaw = new Datalogger.GenericField("Yaw");
-        public Datalogger.GenericField pitch = new Datalogger.GenericField("Pitch");
-        public Datalogger.GenericField roll = new Datalogger.GenericField("Roll");
-        public Datalogger.GenericField globalAngle = new Datalogger.GenericField("globalAngle");
-        public Datalogger.GenericField deltaAngle = new Datalogger.GenericField("deltaAngle");
-        public Datalogger.GenericField battery = new Datalogger.GenericField("Battery");
-
-        /**
-         * @param name the name of the file where the fields are written
-         */
-        public Datalog(String name) {
-            datalogger = new Datalogger.Builder()   // Build the underlying datalog object
-
-                    .setFilename(name)  // Pass through the filename
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS) // Request an automatic timestamp field
-                    .setFields(         // specify the fields for logging in order expected in the log file
-                            opModeStatus,
-                            loopCounter,
-                            yaw,
-                            pitch,
-                            roll,
-                            globalAngle,
-                            deltaAngle,
-                            battery
-                    )
-                    .build();
-        }
-
-        /**
-         * The operation to output one record of the fields to the storage file
-         */
-        public void writeLine() {
-            datalogger.writeLine();
-        }
     }
 }

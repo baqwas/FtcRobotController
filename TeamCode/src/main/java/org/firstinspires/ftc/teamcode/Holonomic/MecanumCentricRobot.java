@@ -25,9 +25,9 @@
 /*
   A basic program that:
   <ul>
-  <li> travels in a linear movement</li>
-  <li> turns 90 degrees when the touch sensor is pressed</li>
-  <li> the turn direction is controlled with bumper buttons on the gamepad</li>
+  <li> uses mecanum wheels in robot centric mode </li>
+  <li> the drive is controlled by the left stick on gamepad1</li>
+  <li> turning is controlled by the right stick on gamepad1</li>
   <li> relies on IMU data to travel in a straight line as well to perform the turns</li>
   <li> displays a few status messages</li>
   </ul>
@@ -36,14 +36,9 @@
  * @param none
  * @return none
  * @exception none
- * @see https://stemrobotics.cs.pdx.edu/node/7266
  * <p>
- * This program registers as Autonomous OpMode in the FtcRobotController app.
- * The robot travels forward in a linear movement. When the touch sensor is pressed
- * it backs up a little enable a 90 degree turn. The bumper buttons on gamepad2
- * select the direction of the turn - left or right.
- * The program relies on the IMU sensor in the REV Robotics Control Hub that
- * runs the FtcRobotController app.
+ * This program registers as Teleop OpMode in the FtcRobotController app.
+ * The robot drive is relative to the robot's current orientation.
  * </p>
  * <p>
  * forward travel:
@@ -100,107 +95,91 @@
 
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-// **REPLACED BNO055IMU with IMU**
 import com.qualcomm.robotcore.hardware.IMU;
-// Removed: import com.qualcomm.hardware.bosch.BNO055IMU;
-
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.TouchSensor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-// Removed: AxesOrder, AxesReference, Orientation
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor;
 
 @TeleOp(name = "Mecanum: Centric Robot", group = "Test")
 @Disabled
 
 public class MecanumCentricRobot extends LinearOpMode {
 
-    private static final  String TAG = MecanumCentricRobot.class.getSimpleName(); // for use in logging
-    Datalog datalog = new Datalog(TAG);
+    private static final String TAG = MecanumCentricRobot.class.getSimpleName();
 
-    long loopCounter;
-    static final double TICKS_PER_INCH = 56.9887969189608; // motor and wheel specific!
-    TouchSensor touch;
-    // **CHANGED TYPE TO IMU**
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "Loop Counter", "Yaw", "Pitch", "Roll",
+            "Gamepad X", "Gamepad Y", "Gamepad Rx", "Strafe Factor",
+            "motorPower0", "motorPower1", "motorPower2", "motorPower3",
+            "Battery"
+    );
+
+    static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 12.7:1, 86 mm wheel
+
     IMU imu;
-
-    // **CHANGED TYPE and initialized using YawPitchRollAngles**
-    YawPitchRollAngles lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
-
-    double globalAngle, power = .40, correction;
-    boolean aButton, bButton, touched;
     private final ElapsedTime runtime = new ElapsedTime();
+    // The Universal IMU uses YawPitchRollAngles
+    YawPitchRollAngles lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
+    double globalAngle, power = 0.40, correction;
+
+    // ADDED: Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
+
     // motor entities for drivetrain
     String[] motorLabels = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
-    DcMotor[] motor = new DcMotor[]{null, null, null, null};
-    int[] motorTicks = {0, 0, 0, 0};    // current tick count from encoder for the respective motors
+    DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
     double[] motorPower = {0.0, 0.0, 0.0, 0.0};
+    int drivetrainSteps = 0;
 
     @Override
     public void runOpMode() throws InterruptedException   // called when init button is  pressed.
     {
-        double x, y, rx;
-        double strafe_coefficient = 2.0;// empirical factor to reduce deviations during strafing
-
-        loopCounter = 0;
-        telemetry.addData("IMU", "Initialization...");
-        telemetry.update();
-        /*
-        // **UPDATED: Universal IMU Initialization**
-        IMU.Parameters parameters = new IMU.Parameters.Builder()
-                .setAngleUnit(IMU.AngleUnit.DEGREES) // AngleUnit is now IMU.AngleUnit
-                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC) // AccelUnit is now IMU.AccelUnit
-                .build();
-
         // **UPDATED: Hardware map retrieval to use IMU interface**
         imu = hardwareMap.get(IMU.class, "imu");
-        imu.initialize(parameters);
-        */
-        // **ADDED: Explicitly reset yaw to zero the heading**
+
+        // **ADDED: Explicitly reset yaw**
         imu.resetYaw();
 
-        // Initialize the hardware variables
-        // The strings used here must correspond
-        // to the names assigned during the robot configuration step on the DS or RC devices.
-        telemetry.addData("Motors", "Initialization...");
-        telemetry.update();
-        for (int i = 0; i < motor.length; i++) {
-            motor[i] = hardwareMap.get(DcMotor.class, motorLabels[i]);
-            /* motor stops and then brakes
-             * actively resisting any external force
-             * which attempts to turn the motor */
-            motor[i].setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-            // run at any velocity with specified power level
-            motor[i].setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        }
-        /* REV Robotics motors may need two of the following
-         * four statements to be enabled - PLEASE TEST before 1st use!
+        // --- MOTOR INITIALIZATION ---
+        /*
+         * Initialize the hardware variables
+         * The strings used here must correspond
+         * to the names assigned during the robot configuration step on the DS or RC devices.
          */
-        // motor[0].setDirection(DcMotorSimple.Direction.FORWARD); // motorLeftFront
-        // motor[1].setDirection(DcMotorSimple.Direction.FORWARD); // motorLeftBack
-        motor[2].setDirection(DcMotorSimple.Direction.REVERSE); // motorRightFront
-        motor[3].setDirection(DcMotorSimple.Direction.REVERSE); // motorRightBack
-
-        // default condition but play it safe anyway
-        for (DcMotor dcMotor : motor) {
-            dcMotor.setPower(0.0); // setting a power level of zero will brake the motor
-            dcMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE); // stops and then brakes, actively resisting any external force which attempts to turn the motor
-            dcMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // apply a particular power level to the motor
+        for (int i = 0; i < motor.length; i++) {
+            motor[i] = hardwareMap.get(DcMotorEx.class, motorLabels[i]);
+            motor[i].setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+            motor[i].setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         }
-        //touch = hardwareMap.touchSensor.get("sensorTouch");        // get a reference to touch sensor.
+        motor[2].setDirection(DcMotorEx.Direction.REVERSE); // motorRightFront
+        motor[3].setDirection(DcMotorEx.Direction.REVERSE); // motorRightBack
 
-        double travelLength = 24.0;     // 12" linear
+        for (DcMotorEx dcMotor : motor) {
+            dcMotor.setPower(0.0);
+            dcMotor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+            dcMotor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        }
 
-        telemetry.addData("IMU", "Calibrating...");
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
+
+        telemetry.addData("Mode", "Calibrating...");
         telemetry.update();
 
         // **UPDATED: Check if IMU is ready (isSystemSet() is the equivalent of isGyroCalibrated() for the U-IMU)**
@@ -209,9 +188,7 @@ public class MecanumCentricRobot extends LinearOpMode {
             sleep(50);
             idle();
         }
-
         telemetry.addData("Mode", "Select Start");
-        // Removed imu.getCalibrationStatus() as it is not a part of the Universal IMU API
         telemetry.addData("Status", "IMU System Set");
         telemetry.update();
 
@@ -221,105 +198,68 @@ public class MecanumCentricRobot extends LinearOpMode {
         telemetry.update();
         sleep(1000);
 
-        if (isStopRequested())          // has stopping opMode been requested
+        if (isStopRequested()) {         // has stopping opMode been requested
+            datalogger.close();
             return;
+        }
+
         while (opModeIsActive()) {
-            // X axis for pivot turning
-            // Y axis for forward/backward movement
-            y = -gamepad1.left_stick_y; // Remember, this is reversed!
-            x = gamepad1.left_stick_x * strafe_coefficient; // Evaluate the empirical factor through more tests
-            rx = gamepad1.right_stick_x;
+            /*
+             * left stick X axis for lateral movement (i.e. right or left)
+             * left stick Y axis for axial movement (i.e. forward or reverse)
+             */
+            double y = -gamepad1.left_stick_y; // Remember, this is reversed!
+            /*
+             * empirically refine the scale factor below -> 1.n, n= 0.0.1 to 0.10
+             */
+            double x = gamepad1.left_stick_x * 1.10;
+            // right stick X is for rotation (i.e. clockwise or counter-clockwise)
+            double rx = gamepad1.right_stick_x;
+
+            // **UPDATED: Get Yaw angle from Universal IMU**
+            YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+            double yaw = angles.getYaw(AngleUnit.DEGREES);
+            double pitch = angles.getPitch(AngleUnit.DEGREES);
+            double roll = angles.getRoll(AngleUnit.DEGREES);
+
             // normalize the power setting in the range {-1, 1}
             double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-            motorPower[0] = (y + x + rx) / denominator;
-            motorPower[1] = (y - x + rx) / denominator;
-            motorPower[2] = (y - x - rx) / denominator;
-            motorPower[3] = (y + x - rx) / denominator;
+            motorPower[0] = (y + x + rx) / denominator; // Left Front
+            motorPower[1] = (y - x + rx) / denominator; // Left Back
+            motorPower[2] = (y - x - rx) / denominator; // Right Front
+            motorPower[3] = (y + x - rx) / denominator; // Right Back
 
             for (int i = 0; i < motor.length; i++) {
                 motor[i].setPower(motorPower[i]);
             }
 
-            // **UPDATED: Get YawPitchRollAngles from Universal IMU**
-            lastAngles = imu.getRobotYawPitchRollAngles();
+            // 2. REPLACED OLD DATALOG LOGIC WITH NEW API CALL
+            String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
 
-            datalog.yaw.set(lastAngles.getYaw(AngleUnit.DEGREES));
-            datalog.pitch.set(lastAngles.getPitch(AngleUnit.DEGREES));
-            datalog.roll.set(lastAngles.getRoll(AngleUnit.DEGREES));
-            datalog.x.set(x);
-            datalog.y.set(y);
-            datalog.rx.set(rx);
-            datalog.strafe_factor.set(strafe_coefficient);
-            datalog.power0.set(motorPower[0]);
-            datalog.power1.set(motorPower[1]);
-            datalog.power2.set(motorPower[2]);
-            datalog.power3.set(motorPower[3]);
-            datalog.writeLine();            // A timestamp is applied to the record when writing
+            datalogger.log(
+                    "RUNNING",                                          // OpModeStatus
+                    String.valueOf(drivetrainSteps++),                  // Loop Counter
+                    String.format("%.4f", yaw),
+                    String.format("%.4f", pitch),
+                    String.format("%.4f", roll),
+                    String.format("%.4f", x),                           // Gamepad X (strafe input)
+                    String.format("%.4f", y),                           // Gamepad Y (axial input)
+                    String.format("%.4f", rx),                          // Gamepad Rx (rotation input)
+                    String.format("%.4f", 1.10),                        // Strafe Factor
+                    String.format("%.4f", motorPower[0]),
+                    String.format("%.4f", motorPower[1]),
+                    String.format("%.4f", motorPower[2]),
+                    String.format("%.4f", motorPower[3]),
+                    batteryVoltage
+            );
 
+            telemetry.addData("Yaw", "%.2f", yaw);
+            telemetry.addData("Status", "Running");
+            telemetry.update();
         }
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
-
-    /**
-     * This class encapsulates all the fields that will go into the datalog.
-     */
-    private static class Datalog {
-        /**
-         * The underlying datalogger object - it cares only about an array of loggable fields
-         * The fields for this OpCode are:
-         * yaw, pitch, roll & battery - in that order
-         */
-
-        private final Datalogger datalogger;
-        // The fields whose values will be written to the storage file
-        // Note that order here is NOT important
-        // The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField loopCounter = new Datalogger.GenericField("Loop Counter");
-        public Datalogger.GenericField yaw = new Datalogger.GenericField("Yaw");
-        public Datalogger.GenericField pitch = new Datalogger.GenericField("Pitch");
-        public Datalogger.GenericField roll = new Datalogger.GenericField("Roll");
-        public Datalogger.GenericField x = new Datalogger.GenericField("x");
-        public Datalogger.GenericField y = new Datalogger.GenericField("y");
-        public Datalogger.GenericField rx = new Datalogger.GenericField("rx");
-        public Datalogger.GenericField strafe_factor = new Datalogger.GenericField("StrafeFactor");
-        public Datalogger.GenericField power0 = new Datalogger.GenericField("power0");
-        public Datalogger.GenericField power1 = new Datalogger.GenericField("power1");
-        public Datalogger.GenericField power2 = new Datalogger.GenericField("power2");
-        public Datalogger.GenericField power3 = new Datalogger.GenericField("power3");
-        // public Datalogger.GenericField battery = new Datalogger.GenericField("Battery");
-
-        /**
-         * @param name the name of the file where the fields are written
-         */
-        public Datalog(String name) {
-            datalogger = new Datalogger.Builder()   // Build the underlying datalog object
-
-                    .setFilename(name)  // Pass through the filename
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS) // Request an automatic timestamp field
-                    .setFields(         // specify the fields for logging in order expected in the log file
-                            opModeStatus,
-                            loopCounter,
-                            yaw,
-                            pitch,
-                            roll,
-                            x,
-                            y,
-                            rx,
-                            strafe_factor,
-                            power0,
-                            power1,
-                            power2,
-                            power3
-                            //battery
-                    )
-                    .build();
-        }
-
-        /**
-         * The operation to output one record of the fields to the storage file
-         */
-        public void writeLine() {
-            datalogger.writeLine();
-        }
-    }
+    // 3. REMOVED THE ENTIRE NESTED 'Datalog' CLASS (was at the end of the file)
 }

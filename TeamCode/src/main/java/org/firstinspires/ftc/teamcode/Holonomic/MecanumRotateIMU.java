@@ -25,244 +25,187 @@
 /*
   A basic program that:
   <ul>
-  <li> rotates by 90 degrees after initiwhen the touch sensor is pressed</li>
-  <li> the turn direction is controlled with bumper buttons on the gamepad</li>
-  <li> relies on IMU data to travel in a straight line as well to perform the turns</li>
-  <li> displays a few status messages</li>
+  <li> rotates by 90 degrees after initialization. The rotation angle is controlled with bumper buttons on the gamepad.</li>
+  <li> relies on IMU data to perform the turns.</li>
+  <li> displays a few status messages.</li>
   </ul>
   @author modified by armw
- * @version 1.1
+ * @version 1.2 - Converted to Universal IMU Interface and simplified Datalogger
  * @param none
  * @return none
  * @exception none
- * @see https://stemrobotics.cs.pdx.edu/node/7266
+ * @see https://stemrobototics.cs.pdx.edu/node/7266
  * <p>
  * This program registers as Autonomous OpMode in the FtcRobotController app.
- * The robot travels forward in a linear movement. When the touch sensor is pressed
- * it backs up a little enable a 90 degree turn. The bumper buttons on gamepad2
- * select the direction of the turn - left or right.
- * The program relies on the IMU sensor in the REV Robotics Control Hub that
- * runs the FtcRobotController app.
+ * The robot rotates to a target angle. The program relies on the IMU sensor
+ * in the REV Robotics Control Hub that runs the FtcRobotController app.
  * </p>
  * <p>
- * BNO055 IMU parameters for initialization:
- * @see https://first-tech-challenge.github.io/SkyStone/com/qualcomm/hardware/bosch/BNO055IMU.Parameters.html
- * BNO055IMU interface abstracts the functionality of the Bosch/Sensortec BNO055 Intelligent 9-axis absolute orientation sensor
- * The BNO055 can output the following sensor data (as described in AdaFruit Absolute Orientation Sensor).
- * - Absolute Orientation (Euler Vector, 100Hz) Three axis orientation data based on a 360° sphere
- * - Absolute Orientation (Quaterion, 100Hz) Four point quaternion output for more accurate data manipulation
- * - Angular Velocity Vector (100Hz) Three axis of 'rotation speed' in rad/s
- * - Acceleration Vector (100Hz) Three axis of acceleration (gravity + linear motion) in m/s^2
- * - Magnetic Field Strength Vector (20Hz) Three axis of magnetic field sensing in micro Tesla (uT)
- * - Linear Acceleration Vector (100Hz) Three axis of linear acceleration data (acceleration minus gravity) in m/s^2
- * - Gravity Vector (100Hz) Three axis of gravitational acceleration (minus any movement) in m/s^2
- * - Temperature (1Hz) Ambient temperature in degrees celsius
- * Of those, the first (the gravity-corrected absolute orientation vector) is arguably the most useful in FTC robot design.
- *
- * Calibration available are:
- * System - gyro, accelerometer and magnetometer
- * Gyro
- * Accelerometer
- * Magnetometer
- * </p>
  * Rotations:
- * Button      Button  Rotation
- * square      X       45
- * triangle    Y       135
- * circle      B       180
- * cross       A       90
+ * Button      Rotation
+ * square (X)  45 degrees
+ * triangle (Y) 135 degrees
+ * circle (B)  180 degrees
+ * cross (A)   90 degrees
+ * left bumper rotates left, right bumper rotates right
+ * </p>
  */
-
 package org.firstinspires.ftc.teamcode.Holonomic;
 
-// **REPLACED BNO055IMU with IMU**
 import com.qualcomm.robotcore.hardware.IMU;
-// Removed: import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.TouchSensor;
+import com.qualcomm.robotcore.hardware.Gamepad;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-// **ADDED YawPitchRollAngles for Universal IMU data retrieval**
-import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-// Removed: AxesOrder, AxesReference, Orientation
 
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor;
 
-@TeleOp(name = "Mecanum: Rotate IMU", group = "Test")
+import java.util.Objects;
+
+@Autonomous(name = "Mecanum: Rotate IMU", group = "Test")
 @Disabled
+public class MecanumRotateIMU extends LinearOpMode {
 
-public class MecanumRotateIMU extends LinearOpMode
-{
+    private static final String TAG = MecanumRotateIMU.class.getSimpleName();
 
-    private static final  String TAG = MecanumRotateIMU.class.getSimpleName();
-    Datalog datalog = new Datalog(TAG); // data logging for offline analysis/debugging
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "Loop Counter", "Yaw", "Pitch", "Roll", "Global Angle", "Delta Angle",
+            "Power Left", "Power Right", "Battery"
+    );
 
-    TouchSensor             touch;
-    // **CHANGED IMU type**
-    IMU                     imu;
-    // **CHANGED to YawPitchRollAngles (initialization is dummy data)**
-    YawPitchRollAngles      lastAngles = new YawPitchRollAngles(AngleUnit.DEGREES, 0, 0, 0, 0);
+    // IMU and Angle tracking variables
+    private IMU imu = null;
+    YawPitchRollAngles lastAngles = null;
+    double globalAngle = 0.0, deltaAngle = 0.0;
+    private final ElapsedTime runtime = new ElapsedTime();
+    double power = 0.40; // Default rotation power
 
-    double                  globalAngle, power = .30, correction;
-    boolean                 aButton, bButton, touched;
-    int                     rotationSteps = 0;  // step counter for the iterations during the rotate movement
+    // ADDED: Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
+
     // motor entities for drivetrain
-    String[] motorLabels = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
-    private final DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null};
-    private final double[] motorPower = {0.0, 0.0, 0.0, 0.0};
-
-    /**
-     * Function to stop power to all defined motors in the arraylist motor[]
-     * and to wait for 1 second.
-     * The stopping action is controlled by the setting chosen for the motor
-     * based on vendor specification by the program during the initialization.
-     */
-    private void fullStop() {
-        for (DcMotorEx dcMotor : motor) {
-            dcMotor.setPower(0.0);
-            dcMotor.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER); // see note, if any, on vendor specs for the corresponding motor
-            dcMotor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER); // apply a particular power level to the motor run at any velocity with specified power level
-        }
-        sleep(500);
-    }
+    private DcMotorEx[] motor = new DcMotorEx[4];
+    private static final String[] MOTOR_NAMES = {"motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack"};
+    private boolean motorsInitialized = true; // Flag to track initialization success
+    private int loopCounter = 0;
 
     @Override
-    /*
-     * basic runOpMode
-     */
-    public void runOpMode() throws InterruptedException   // called when init button is  pressed.
-    {
-        int rotationDegrees;            // rotation angle specified/required, degrees
-        int rotationAngle = 0;
+    public void runOpMode() throws InterruptedException {
 
-        /*
-        // **UPDATED: Universal IMU Parameters and Initialization**
-        IMU.Parameters parameters = new IMU.Parameters.Builder()
-                .setAngleUnit(AngleUnit.DEGREES)
-                .setAccelUnit(IMU.AccelUnit.METERS_PERSEC_PERSEC)
-                .build();
-        */
-        String deviceName = "imu";
-
-        imu = hardwareMap.get(IMU.class, deviceName);  // Retrieve the entity reference
-
-        if (imu == null) {
-            telemetry.addData("IMU", "device name " + deviceName + " not detected");
-            telemetry.update();
-            sleep(60000);    // really need to stop the run!
+        // --- SAFE MOTOR INITIALIZATION ---
+        for (int i = 0; i < MOTOR_NAMES.length; i++) {
+            try {
+                motor[i] = hardwareMap.get(DcMotorEx.class, MOTOR_NAMES[i]);
+                motor[i].setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+                motor[i].setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            } catch (Exception e) {
+                telemetry.addData("ERROR", "Motor %s not found. Check configuration!", MOTOR_NAMES[i]);
+                motorsInitialized = false;
+            }
+        }
+        // Set direction for right-side motors
+        if (motorsInitialized) {
+            motor[2].setDirection(DcMotor.Direction.REVERSE);
+            motor[3].setDirection(DcMotor.Direction.REVERSE);
         }
 
-        // imu.initialize(parameters);     // Initialize the sensor using the indicated set of parameters
-        imu.resetYaw();                 // Reset yaw to make the current heading 0 degrees
+        // --- SAFE IMU INITIALIZATION ---
+        try {
+            imu = hardwareMap.get(IMU.class, "imu");
+            RevHubOrientationOnRobot.LogoFacingDirection logoDirection = RevHubOrientationOnRobot.LogoFacingDirection.UP;
+            RevHubOrientationOnRobot.UsbFacingDirection usbDirection = RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+            RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(logoDirection, usbDirection);
+            IMU.Parameters parameters = new IMU.Parameters(orientationOnRobot);
+            imu.initialize(parameters);
+            imu.resetYaw();
+            telemetry.addData("Status", "IMU Initialized and Yaw Reset");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "IMU (name 'imu') not found. Check configuration!");
+        }
 
-        telemetry.addData("Mode", "Calibrating...");
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
         telemetry.update();
 
-        // Initialize the hardware variables
-        // The strings used here must correspond
-        // to the names assigned during the robot configuration step on the DS or RC devices.
-        for (int i = 0; i < motor.length; i++) {
-            motor[i] = hardwareMap.get(DcMotorEx.class, motorLabels[i]);
-            /* motor stops and then brakes
-             * actively resisting any external force
-             * which attempts to turn the motor */
-            motor[i].setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-            // run at any velocity with specified power level
-            motor[i].setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        waitForStart();
+
+        if (isStopRequested()) {
+            datalogger.close();
+            return;
         }
 
-        // is the gyro is fully calibrated?
-        // **UPDATED: Check if IMU is ready (isSystemSet() is the equivalent of isGyroCalibrated() for the U-IMU)**
-        while (!isStopRequested())        // cannot continue until system is set
-        {
-            sleep(50);
+        while (opModeIsActive()) {
+            // Check gamepad2 for rotation command
+            int degreesToRotate = 0;
+
+            if (gamepad1.x) degreesToRotate = 45;
+            else if (gamepad1.y) degreesToRotate = 135;
+            else if (gamepad1.b) degreesToRotate = 180;
+            else if (gamepad1.a) degreesToRotate = 90;
+
+            if (degreesToRotate != 0) {
+                if (gamepad1.right_bumper) {
+                    rotate(-degreesToRotate, power); // Negative for right turn
+                } else if (gamepad1.left_bumper) {
+                    rotate(degreesToRotate, power); // Positive for left turn
+                }
+            }
+
+            // Log current status (even when stopped)
+            logDatalogger("IDLE");
+
+            telemetry.addData("Global Angle", "%.2f", globalAngle);
+            telemetry.addData("Status", "Waiting for command");
+            telemetry.update();
+
             idle();
         }
-        // Removed: imu.getCalibrationStatus().toString()
-        telemetry.addData("Status", "IMU System Set");
 
-        /*
-         * The logical direction in which this motor operates: FORWARD | REVERSE
-         * REV Robotics motors may need two of the following
-         * four statements to be enabled - PLEASE TEST before 1st use!
-         */
-        // motor[0].setDirection(DcMotorEx.Direction.FORWARD); // motorLeftFront
-        // motor[1].setDirection(DcMotorEx.Direction.FORWARD); // motorLeftBack
-        motor[2].setDirection(DcMotorEx.Direction.REVERSE); // motorRightFront
-        motor[3].setDirection(DcMotorEx.Direction.REVERSE); // motorRightBack
-
-        telemetry.addData("Rotations", "X/square:45 A/cross:90 Y/triangle:135 B/circle:180");
-        telemetry.addData("Mode", "Select Start");
-        telemetry.update();
-
-        waitForStart();                     // wait for Start button
-
-        telemetry.addData("Mode", "running");
-        telemetry.update();
-        sleep(1000);
-
-        // Initial call to resetAngle to set the starting YawPitchRollAngles object
-        resetAngle();
-
-        while (opModeIsActive())                // drive until end of TeleOps (for testing use only presently)
-        {
-            //correction = checkDirection();      // Use gryo to maintain heading
-
-            telemetry.addData("1 IMU heading", lastAngles.getYaw(AngleUnit.DEGREES)); // Use YawPitchRollAngles method
-            telemetry.addData("2 Global heading", globalAngle);
-            telemetry.addData("3 Correction", correction);
-            telemetry.addData("Rotations", "X/square:45 A/cross:90 Y/triangle:135 B/circle:180");
-            telemetry.update();
-
-            if (gamepad1.x) {           // square X button
-                rotationAngle = 45;
-            }
-            else if (gamepad1.a) {           // cross A button
-                rotationAngle = 90;
-            }
-            else if (gamepad1.y) {           // triangle Y button
-                rotationAngle = 135;
-            }
-            else if (gamepad1.b) {           // circle B button
-                rotationAngle = 180;
-            }
-            if (Math.abs(rotationAngle) > 0) {
-                telemetry.addData("Rotation: ", rotationAngle);
-                telemetry.update();
-                rotate(rotationAngle, power);
-                sleep(1000);
-            }
-        }
-        fullStop();
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
 
     /**
      * Resets the cumulative angle tracking to zero and initializes the lastAngles entity
      */
-    private void resetAngle()
-    {
-        // **UPDATED: Reset Yaw and capture new reference angle**
-        imu.resetYaw();
-        lastAngles = imu.getRobotYawPitchRollAngles();
+    private void resetAngle() {
+        if (imu != null) {
+            imu.resetYaw();
+            lastAngles = imu.getRobotYawPitchRollAngles();
+        }
         globalAngle = 0;
+        deltaAngle = 0;
     }
 
     /**
      * Get current cumulative angle rotation from last reset.
+     *
      * @return Angle in degrees. + = left, - = right.
      */
-    private double getAngle()
-    {
-        // **UPDATED: Use getRobotYawPitchRollAngles**
+    private double getAngle() {
+        // Return 0.0 if IMU or angle data is not available
+        if (imu == null || lastAngles == null) return globalAngle;
+
         YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
-        double deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
+        if (angles == null) return globalAngle;
+
+        deltaAngle = angles.getYaw(AngleUnit.DEGREES) - lastAngles.getYaw(AngleUnit.DEGREES);
 
         if (deltaAngle < -180)
             deltaAngle += 360;
@@ -273,156 +216,92 @@ public class MecanumRotateIMU extends LinearOpMode
 
         lastAngles = angles;
 
-        datalog.loopCounter.set(rotationSteps++);
-        datalog.yaw.set(angles.getYaw(AngleUnit.DEGREES));
-        datalog.pitch.set(angles.getPitch(AngleUnit.DEGREES));
-        datalog.roll.set(angles.getRoll(AngleUnit.DEGREES));
-        datalog.globalAngle.set(globalAngle);
-        datalog.deltaAngle.set(deltaAngle);
-
-        datalog.writeLine();            // A timestamp is applied to the record when writing
         return globalAngle;
     }
 
     /**
-     * If the current cumulative heading angle is not zero then the robot is
-     * not travel in a straight line. Use a simple proportional control to
-     * correct the deviation.
-     * <p>
-     * The gain value is essentially the proportional control correction factor.
-     * This value may require some tuning based on field experiments.
-     * </p>
-     * @return Power adjustment, + is adjust left - is adjust right.
+     * Rotate left or right in degrees.
+     *
+     * @param degrees amount to turn.
+     * @param power   power of motors applied
+     * param isRight true if turn direction is right
      */
-    private double checkDirection()
-    {
-        double correction, angle, gain = .10;
+    private void rotate(int degrees, double power) {
+        if (imu == null || !motorsInitialized) return; // Cannot rotate without IMU or motors
 
-        angle = getAngle();
+        double leftPower, rightPower;
 
-        if (angle == 0)
-            correction = 0;             // no adjustment.
-        else
-            correction = -angle;        // reverse sign of angle for correction.
+        resetAngle(); // reset heading for tracking with IMU data
 
-        correction = correction * gain;
-
-        return correction;
-    }
-
-    /**
-     * Rotate left or right the number of degrees. Does not support turning more than 180 degrees.
-     * <p>
-     * getAngle() returns + when rotating counter clockwise (left) and - when rotating
-     * clockwise (right).
-     * </p>
-     * @param degrees Degrees to turn, + is left - is right
-     */
-    private void rotate(int degrees, double power)
-    {
-        double  leftPower, rightPower;
-
-        resetAngle();                   // reset heading for tracking with IMU data
-
-        if (degrees < 0)
-        {                               // turn right
+        if (degrees < 0) {              // turn right
             leftPower = power;
             rightPower = -power;
-        }
-        else if (degrees > 0)
-        {                               // turn left
+        } else if (degrees > 0) {       // turn left.
             leftPower = -power;
             rightPower = power;
-        }
-        else return;
-        datalog.powerLeft.set(leftPower);
-        datalog.powerRight.set(rightPower);
+        } else return;
 
-        /* Mecanum drive-train wheel alignment is X shaped
-         * left front[0] and right rear/back[3] are paired
-         * left rear/back[1] and right front[2] are paired
-         * for applied power during rotations
-         */
-        motor[0].setPower(leftPower);   // set power to rotate
-        motor[1].setPower(leftPower);
-        motor[2].setPower(rightPower);
-        motor[3].setPower(rightPower);
+        // Apply power
+        if (motor[0] != null) motor[0].setPower(leftPower); // Left Front
+        if (motor[1] != null) motor[1].setPower(leftPower); // Left Back (Adjusted for rotation)
+        if (motor[2] != null) motor[2].setPower(rightPower); // Right Front
+        if (motor[3] != null) motor[3].setPower(rightPower); // Right Back (Adjusted for rotation)
 
         // rotate until turn is completed.
-        if (degrees < 0)
-        {                               // On right turn we have to get off zero first.
-            // noinspection StatementWithEmptyBody
-            while (opModeIsActive() && getAngle() == 0) {}
-
-            //noinspection StatementWithEmptyBody
-            while (opModeIsActive() && getAngle() > degrees) {}
-        }
-        else {                          // left turn
-            // noinspection StatementWithEmptyBody
+        if (degrees < 0) { // Right Turn (Negative degrees)
+            // Wait until IMU moves off zero, then until angle is reached
+            while (opModeIsActive() && getAngle() == 0) {
+                logDatalogger("ROTATING");
+            }
+            while (opModeIsActive() && getAngle() > degrees) {
+                logDatalogger("ROTATING");
+            }
+        } else { // Left Turn (Positive degrees)
             while (opModeIsActive() && getAngle() < degrees) {
+                logDatalogger("ROTATING");
             }
         }
+
         fullStop();
 
-        resetAngle();                   // reset angle tracking on new heading
+        resetAngle(); // reset angle tracking on new heading
     }
 
     /**
-     * This class encapsulates all the fields that will go into the datalog.
+     * Function to stop power to all defined motors.
      */
-    private static class Datalog
-    {
-        /**
-         * The underlying datalogger object - it cares only about an array of loggable fields
-         * The fields for this OpCode are:
-         * yaw, pitch, roll & battery - in that order
-         */
-
-        private final Datalogger datalogger;
-        // The fields whose values will be written to the storage file
-        // Note that order here is NOT important
-        // The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField loopCounter  = new Datalogger.GenericField("Loop Counter");
-        public Datalogger.GenericField yaw          = new Datalogger.GenericField("Yaw");
-        public Datalogger.GenericField pitch        = new Datalogger.GenericField("Pitch");
-        public Datalogger.GenericField roll         = new Datalogger.GenericField("Roll");
-        public Datalogger.GenericField globalAngle  = new Datalogger.GenericField("globalAngle");
-        public Datalogger.GenericField deltaAngle   = new Datalogger.GenericField("deltaAngle");
-        public Datalogger.GenericField powerLeft    = new Datalogger.GenericField("powerLeft");
-        public Datalogger.GenericField powerRight   = new Datalogger.GenericField("powerRight");
-        //public Datalogger.GenericField battery      = new Datalogger.GenericField("Battery");
-        /**
-         *
-         * @param name the name of the file where the fields are written
-         */
-        public Datalog(String name)
-        {
-            datalogger = new Datalogger.Builder()   // Build the underlying datalog object
-
-                    .setFilename(name)  // Pass through the filename
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS) // Request an automatic timestamp field
-                    .setFields(         // specify the fields for logging in order expected in the log file
-                            opModeStatus,
-                            loopCounter,
-                            yaw,
-                            pitch,
-                            roll,
-                            globalAngle,
-                            deltaAngle,
-                            powerLeft,
-                            powerRight
-                            //battery
-                    )
-                    .build();
-        }
-
-        /**
-         * The operation to output one record of the fields to the storage file
-         */
-        public void writeLine()
-        {
-            datalogger.writeLine();
+    private void fullStop() {
+        for (DcMotorEx dcMotor : motor) {
+            if (dcMotor != null) {
+                dcMotor.setPower(0.0);
+            }
         }
     }
+
+    /**
+     * Internal helper to log the current robot state.
+     */
+    private void logDatalogger(String status) {
+        double currentYaw = (lastAngles != null) ? lastAngles.getYaw(AngleUnit.DEGREES) : 0.0;
+        double currentPitch = (lastAngles != null) ? lastAngles.getPitch(AngleUnit.DEGREES) : 0.0;
+        double currentRoll = (lastAngles != null) ? lastAngles.getRoll(AngleUnit.DEGREES) : 0.0;
+        double powerLeft = (motor[0] != null) ? motor[0].getPower() : 0.0;
+        double powerRight = (motor[2] != null) ? motor[2].getPower() : 0.0;
+        String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
+
+        datalogger.log(
+                status,
+                String.valueOf(loopCounter++),
+                String.format("%.4f", currentYaw),
+                String.format("%.4f", currentPitch),
+                String.format("%.4f", currentRoll),
+                String.format("%.4f", globalAngle),
+                String.format("%.4f", deltaAngle),
+                String.format("%.4f", powerLeft),
+                String.format("%.4f", powerRight),
+                batteryVoltage
+        );
+    }
+
+    // 2. REMOVED THE ENTIRE NESTED 'Datalog' CLASS
 }
