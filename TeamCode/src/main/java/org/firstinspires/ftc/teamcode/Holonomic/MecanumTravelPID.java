@@ -114,6 +114,7 @@ import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor; // NEW IMPORT
 
 @TeleOp(name = "Mecanum: Travel PID", group = "Test")
 //@Disabled
@@ -121,23 +122,32 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 public class MecanumTravelPID extends LinearOpMode
 {
     private static final  String TAG = MecanumTravelIMU.class.getSimpleName(); // for use in logging
-    Datalog datalog = new Datalog(TAG);
+
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "Yaw", "Pitch", "Roll", "YawError", "TicksError",
+            "Correction", "TargetTicks", "MotorTicks", "TicksToGo", "AppliedPower",
+            "motorLeftFront", "motorLeftBack", "motorRightFront", "motorRightBack",
+            "Battery"
+    );
+
     /**
-    // calcs for TICKS_PER_INCH at
-    // https://docs.google.com/spreadsheets/d/1PRGoHqyCUkSiiUiAUla-mElgsUdoqUssUntqvU-TYFY/edit?usp=sharing
-    // static final double     TICKS_PER_INCH = 217.3267045; // REV Robotics Core Hex motor (REV-41-1300) & 75mm wheel
-    static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
-    // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 (19.2:1) and 96mm Mecanum wheel
-        SWYFT Drive v2
-        4	Quadrature (Hall Effect)
-        7	Cycles per revolution
-        28	Ticks per motor internal shaft
-        12.7	Gear ratio
-        355.6	Motor shaft ticks
-        86	Wheel diameter, mm
-        270.176968208722	Wheel circumference, mm
-        10.6368885121544	Wheel circumference, inches
-        33.4308289114498	ticks/inch
+     // calcs for TICKS_PER_INCH at
+     // https://docs.google.com/spreadsheets/d/1PRGoHqyCUkSiiUiAUla-mElgsUdoqUssUntqvU-TYFY/edit?usp=sharing
+     // static final double     TICKS_PER_INCH = 217.3267045; // REV Robotics Core Hex motor (REV-41-1300) & 75mm wheel
+     static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
+     // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 (19.2:1) and 96mm Mecanum wheel
+     SWYFT Drive v2
+     4	Quadrature (Hall Effect)
+     7	Cycles per revolution
+     28	Ticks per motor internal shaft
+     12.7	Gear ratio
+     355.6	Motor shaft ticks
+     86	Wheel diameter, mm
+     270.176968208722	Wheel circumference, mm
+     10.6368885121544	Wheel circumference, inches
+     33.4308289114498	ticks/inch
      */
     static final double     TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
     TouchSensor             touch;
@@ -156,6 +166,9 @@ public class MecanumTravelPID extends LinearOpMode
     };
     DcMotorEx[] motor = new DcMotorEx[]{null, null, null, null}; // couldn't initialize hardwareMap here?!!
     int[] motorTicks = {0, 0, 0, 0};    // current tick count from encoder for the respective motors
+
+    // NEW: Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
 
     /**
      * @param travelLength the linear distance to travel, inches
@@ -247,10 +260,15 @@ public class MecanumTravelPID extends LinearOpMode
                  * motors 0,3 pair
                  * motors 1,2 pair
                  */
-                motor[0].setPower(appliedPower - correction);
-                motor[1].setPower(appliedPower + correction);
-                motor[2].setPower(appliedPower + correction);
-                motor[3].setPower(appliedPower - correction);
+                double power0 = appliedPower - correction;
+                double power1 = appliedPower + correction;
+                double power2 = appliedPower + correction;
+                double power3 = appliedPower - correction;
+
+                motor[0].setPower(power0);
+                motor[1].setPower(power1);
+                motor[2].setPower(power2);
+                motor[3].setPower(power3);
 
                 // *** IMU Logging Update ***
                 telemetry.addData("1 IMU Yaw", orientation.getYaw(AngleUnit.DEGREES));
@@ -262,21 +280,28 @@ public class MecanumTravelPID extends LinearOpMode
                 telemetry.addData("7 Motor power:", motor[0].getPower());
                 telemetry.addData("8 Travel power:", travelPower);
                 telemetry.update();
-                datalog.yaw.set(orientation.getYaw(AngleUnit.DEGREES));
-                datalog.pitch.set(orientation.getPitch(AngleUnit.DEGREES));
-                datalog.roll.set(orientation.getRoll(AngleUnit.DEGREES));
-                datalog.yawError.set(yawError);
-                datalog.ticksError.set(ticksError);
-                datalog.correction.set(correction);
-                datalog.targetTicks.set(travelTicks);
-                datalog.motorTicks.set(motorTicks[0]);
-                datalog.ticksToGo.set(ticksToGo);
-                datalog.appliedPower.set(appliedPower);
-                datalog.leftFront.set(motor[0].getPower());
-                datalog.leftBack.set(motor[1].getPower());
-                datalog.rightFront.set(motor[2].getPower());
-                datalog.rightBack.set(motor[3].getPower());
-                datalog.writeLine();        // The logged timestamp is taken when writeLine() is called
+
+                // 2. UPDATED LOGGING CALL
+                String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
+
+                datalogger.log(
+                        "RUNNING",
+                        String.format("%.4f", orientation.getYaw(AngleUnit.DEGREES)),
+                        String.format("%.4f", orientation.getPitch(AngleUnit.DEGREES)),
+                        String.format("%.4f", orientation.getRoll(AngleUnit.DEGREES)),
+                        String.format("%.4f", yawError),
+                        String.format("%.4f", ticksError),
+                        String.format("%.4f", correction),
+                        String.format("%.0f", travelTicks),
+                        String.format("%d", motorTicks[0]),
+                        String.format("%.4f", ticksToGo),
+                        String.format("%.4f", appliedPower),
+                        String.format("%.4f", power0),
+                        String.format("%.4f", power1),
+                        String.format("%.4f", power2),
+                        String.format("%.4f", power3),
+                        batteryVoltage
+                );
 
                 aButton = gamepad1.a;       // allow teleop to change direction by 90 degrees
                 bButton = gamepad1.b;       // A - Cross; B - Circle
@@ -377,6 +402,15 @@ public class MecanumTravelPID extends LinearOpMode
         imu.initialize(parameters);
         // **********************************
 
+        // --- BATTERY SENSOR INITIALIZATION ---
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+            telemetry.addData("Status", "Battery Sensor Initialized");
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
+        telemetry.update();
+
         double travelLength = 0.0;     // 12" linear, will parametrically evaluate other lengths too!
         double deltaTravel = 3.0;
 
@@ -409,6 +443,9 @@ public class MecanumTravelPID extends LinearOpMode
             telemetry.update();
             sleep(pauseInterval);
         }
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
 
     }
 
@@ -502,90 +539,55 @@ public class MecanumTravelPID extends LinearOpMode
         {
             // On right turn we have to get off zero first.
             //noinspection StatementWithEmptyBody
-            while (opModeIsActive() && getAngle() == 0) {}
+            while (opModeIsActive() && getAngle() == 0) {
+                logRotationStatus("ROTATING", leftPower, rightPower);
+            }
 
             //noinspection StatementWithEmptyBody
-            while (opModeIsActive() && getAngle() > degrees) {}
+            while (opModeIsActive() && getAngle() > degrees) {
+                logRotationStatus("ROTATING", leftPower, rightPower);
+            }
         }
         else                                // left turn.
             //noinspection StatementWithEmptyBody
-            while (opModeIsActive() && getAngle() < degrees) {}
+            while (opModeIsActive() && getAngle() < degrees) {
+                logRotationStatus("ROTATING", leftPower, rightPower);
+            }
 
         fullStop();
 
         resetAngle();                          // reset angle tracking on new heading
     }
 
-
-    /*
-     * This class encapsulates all the fields that will go into the datalog.
+    /**
+     * Helper to log data specifically during rotation.
      */
-    public static class Datalog
-    {
-        // The underlying datalogger object - it cares only about an array of loggable fields
-        private final Datalogger datalogger;
+    private void logRotationStatus(String status, double powerLeft, double powerRight) {
+        YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+        String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
 
-        // These are all of the fields that we want in the datalog.
-        // Note that order here is NOT important. The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField yaw          = new Datalogger.GenericField("Yaw");
-        public Datalogger.GenericField pitch        = new Datalogger.GenericField("Pitch");
-        public Datalogger.GenericField roll         = new Datalogger.GenericField("Roll");
-        public Datalogger.GenericField yawError     = new Datalogger.GenericField("YawError");
-        public Datalogger.GenericField ticksError   = new Datalogger.GenericField("TicksError");
-        public Datalogger.GenericField correction   = new Datalogger.GenericField("Correction");
-        public Datalogger.GenericField targetTicks  = new Datalogger.GenericField("TargetTicks");
-        public Datalogger.GenericField motorTicks   = new Datalogger.GenericField("MotorTicks");
-        public Datalogger.GenericField ticksToGo   = new Datalogger.GenericField("TicksToGo");
-        public Datalogger.GenericField appliedPower = new Datalogger.GenericField("AppliedPower");
-        public Datalogger.GenericField leftFront    = new Datalogger.GenericField("motorLeftFront");
-        public Datalogger.GenericField leftBack     = new Datalogger.GenericField("motorLeftBack");
-        public Datalogger.GenericField rightFront   = new Datalogger.GenericField("motorRightFront");
-        public Datalogger.GenericField rightBack    = new Datalogger.GenericField("motorRightBack");
-        /*
-            telemetry.addData("4 Current ticks:", motorTicks[0]);
-            telemetry.addData("5 Travel length:", travelLength);
-            telemetry.addData("7 Motor power:", motor[0].getPower());
-            telemetry.addData("8 Travel power:", travelPower);
-         */
-
-        public Datalog(String name)
-        {
-            // Build the underlying datalog object
-            datalogger = new Datalogger.Builder()
-
-                    // Pass through the filename
-                    .setFilename(name)
-
-                    // Request an automatic timestamp field
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS)
-
-                    // Tell it about the fields we care to log.
-                    // Note that order *IS* important here! The order in which we list
-                    // the fields is the order in which they will appear in the log.
-                    .setFields(
-                            opModeStatus,
-                            yaw,
-                            pitch,
-                            roll,
-                            yawError,
-                            ticksError,
-                            correction,
-                            targetTicks,
-                            motorTicks,
-                            leftFront,
-                            leftBack,
-                            rightFront,
-                            rightBack
-                    )
-                    .build();
-        }
-
-        // Tell the datalogger to gather the values of the fields
-        // and write a new line in the log.
-        public void writeLine()
-        {
-            datalogger.writeLine();
-        }
+        // Log the current rotation status. Many fields will be irrelevant (like ticks, correction)
+        // so we fill them with 0.0 or N/A
+        datalogger.log(
+                status,
+                String.format("%.4f", orientation.getYaw(AngleUnit.DEGREES)),
+                String.format("%.4f", orientation.getPitch(AngleUnit.DEGREES)),
+                String.format("%.4f", orientation.getRoll(AngleUnit.DEGREES)),
+                "N/A", // YawError
+                "N/A", // TicksError
+                "N/A", // Correction
+                "0.0", // TargetTicks
+                "0",   // MotorTicks
+                "0.0", // TicksToGo
+                String.format("%.4f", Math.abs(powerLeft)), // AppliedPower
+                String.format("%.4f", motor[0].getPower()), // motorLeftFront
+                String.format("%.4f", motor[1].getPower()), // motorLeftBack
+                String.format("%.4f", motor[2].getPower()), // motorRightFront
+                String.format("%.4f", motor[3].getPower()), // motorRightBack
+                batteryVoltage
+        );
     }
+
+
+    // 3. REMOVED THE ENTIRE NESTED 'Datalog' CLASS
 }

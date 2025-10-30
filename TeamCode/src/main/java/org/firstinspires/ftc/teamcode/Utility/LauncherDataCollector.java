@@ -24,12 +24,8 @@
 /// precise three-part process:
 ///  Velocity Control: gamepad1.dpad_up and gamepad1.dpad_down adjust the target velocity incrementally.
 ///  Motor Activation (setVelocity): gamepad1.y starts the launcher motor at the current target velocity.
-///  Launch/Outcome Logging: gamepad1.a (Success) or gamepad1.b (Failure) logs the data, and this action is now separated by a mandatory delay (VELOCITY_SETTLE_TIME_MS) after the launcher motor is activated to ensure the PID loop reaches the desired velocity.
-/// The updated OpMode is below:
-///  The OpMode now enforces a 1500ms stabilization period (defined by VELOCITY_SETTLE_TIME_MS)
-///  after the launcher motor is activated by the Y button, ensuring that when you press A or B to log the outcome,
-///  the motor has reached its target velocity. The telemetry output clearly informs the driver
-///  whether the velocity is stable enough to proceed with logging.
+///  Launch/Outcome Logging: gamepad1.a (Success) or gamepad1.b (Failure) logs the data, an resets the state.
+
 package org.firstinspires.ftc.teamcode.Utility;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -37,342 +33,324 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
-import com.qualcomm.robotcore.util.ElapsedTime; // Import ElapsedTime for accurate delay
+import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
-import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 
 import java.util.List;
 
-@TeleOp(name = "Localization & Launcher Logger", group = "DataEngineering")
+/**
+ * OpMode for collecting launcher data during tuning and competition.
+ * It tracks launcher velocity, battery voltage, and AprilTag localization data
+ * triggered by specific gamepad inputs.
+ */
+@TeleOp(name = "Launcher Data Collector", group = "Utility")
 public class LauncherDataCollector extends LinearOpMode {
 
-    // --- Vision Components ---
-    private AprilTagProcessor aprilTag;
-    private VisionPortal visionPortal;
+    private static final String TAG = LauncherDataCollector.class.getSimpleName();
+    private final Datalog datalog = new Datalog(TAG);
+    private ElapsedTime runtime = new ElapsedTime();
 
-    // --- Hardware Components ---
+    // Launcher Constants
+    private static final double VELOCITY_INCREMENT = 50.0; // Ticks/second change
+    private static final double MAX_VELOCITY = 2000.0;
+    private static final double MIN_VELOCITY = 0.0;
+
+    // Hardware components
     private DcMotorEx motorLeftFront = null;
     private DcMotorEx motorLeftBack = null;
     private DcMotorEx motorRightFront = null;
     private DcMotorEx motorRightBack = null;
-    private DcMotorEx launcherMotor = null; // New motor for the launcher mechanism
-    private VoltageSensor batterySensor = null; // Component to read battery voltage
+    private DcMotorEx motorLauncher = null;
 
-    // --- Data Logging Components ---
-    private Datalogger datalogger;
-    private Datalogger.GenericField fTime;
-    private Datalogger.GenericField fID;
-    private Datalogger.GenericField fRange;
-    private Datalogger.GenericField fBearing;
-    private Datalogger.GenericField fElevation;
-    private Datalogger.GenericField fDriveMotorPower;
-    private Datalogger.GenericField fDriveMotorVelocity;
-    private Datalogger.GenericField fLauncherCurrentVel;
-    private Datalogger.GenericField fLauncherTargetVel;
-    private Datalogger.GenericField fSuccessStatus; // 0=Idle, 1=Success, -1=Failure
-    private Datalogger.GenericField fBatteryVoltage;
-    private Datalogger.GenericField fIsLaunching; // State of the Y button
+    private VoltageSensor batterySensor;
 
-    // --- State Variables ---
-    private double currentTargetVelocity = 1000.0; // Start with a reasonable default velocity
-    private boolean prevAState = false; // For rising edge detection on SUCCESS
-    private boolean prevBState = false; // For rising edge detection on FAILURE
-    private boolean prevYState = false; // For rising edge detection on LAUNCH (Y)
-    private ElapsedTime launchTimer = new ElapsedTime();
-    private boolean isVelocityStable = false;
+    // State Variables
+    private double targetLauncherVelocity = 0.0;
+    private boolean isLauncherActive = false;
+    private boolean yPressed = false;
+    private boolean aPressed = false;
+    private boolean bPressed = false;
+    private boolean dpadUpPressed = false;
+    private boolean dpadDownPressed = false;
+    private int loopCounter = 0;
 
-    // Constants
-    private final double DRIVE_SPEED = 0.5;
-    private final int VELOCITY_INCREMENT = 50; // Ticks/sec increment for dpad
-    private final double VELOCITY_SETTLE_TIME_MS = 1500; // Time in ms to wait for PID to stabilize
+    // Vision
+    private AprilTagProcessor aprilTagProcessor;
+    private VisionPortal visionPortal;
+    private static final int APRIL_TAG_ID = 2; // Target AprilTag ID
+
+    // =========================================================================================
+    // Datalog Fields (Local variables now hold data)
+    // =========================================================================================
+
+    // Variables to hold the data for the current log line
+    private String opModeStatus = "INIT";
+    private String launchOutcome = "N/A";
+    private double actualLauncherVelocity = 0.0;
+    private double driveMotorVelocityAvg = 0.0;
+    private double batteryVoltage = 0.0;
+    private int aprilTagId = -1;
+    private double aprilTagRange = 0.0;
+    private double aprilTagBearing = 0.0;
+    private double aprilTagElevation = 0.0;
+
+    // =========================================================================================
+    // OpMode Control
+    // =========================================================================================
 
     @Override
     public void runOpMode() {
-        // 1. Initialize Hardware
+        initHardware();
+        initVision();
+
+        telemetry.addData("Status", "Hardware Initialized & Vision Ready");
+        telemetry.addData("Target Velocity", "%.0f Ticks/s (Use D-Pad Up/Down)", targetLauncherVelocity);
+        telemetry.update();
+
+        waitForStart();
+        runtime.reset();
+
+        while (opModeIsActive()) {
+            handleInput();
+            mainLoop();
+        }
+
+        stopAllMotors();
+        datalog.close();
+    }
+
+    // =========================================================================================
+    // Initialization Methods
+    // =========================================================================================
+
+    private void initHardware() {
         try {
-            // Mecanum Drive Motors
             motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
             motorLeftBack = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
             motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
             motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
+            motorLauncher = hardwareMap.get(DcMotorEx.class, "motorLauncher");
 
-            // Mecanum Motor Directions
+            // Set motor directions (assuming a standard setup where left motors are reversed)
             motorLeftFront.setDirection(DcMotor.Direction.REVERSE);
             motorLeftBack.setDirection(DcMotor.Direction.REVERSE);
             motorRightFront.setDirection(DcMotor.Direction.FORWARD);
             motorRightBack.setDirection(DcMotor.Direction.FORWARD);
 
-            // Set drive motor run modes
-            motorLeftFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-            // Launcher motor setup for velocity control
-            launcherMotor = hardwareMap.get(DcMotorEx.class, "launcher_motor");
-            launcherMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-            // Find a primary voltage sensor
-            batterySensor = hardwareMap.voltageSensor.iterator().next();
-        } catch (Exception e) {
-            telemetry.addData("Error", "Hardware initialization failed. Check config names: " + e.getMessage());
-            telemetry.update();
-            sleep(3000);
-            return;
-        }
-
-        // 2. Initialize AprilTag Vision
-        initAprilTag();
-
-        // 3. Initialize DataLogger
-        initDataLogger();
-
-        telemetry.addData("Status", "Initialized and Ready");
-        telemetry.addData("TARGET VELOCITY", "%.0f Ticks/Sec", currentTargetVelocity);
-        telemetry.addData("--- CONTROL ---", "D-pad Up/Down: Change Velocity");
-        telemetry.addData("--- CONTROL ---", "Y: Activate Launcher Motor");
-        telemetry.addData("--- LOGGING ---", "A: Success Log (Status=1) | B: Failure Log (Status=-1)");
-        telemetry.update();
-
-        waitForStart();
-
-        if (opModeIsActive()) {
-            // Start the launch timer immediately when the OpMode starts
-            launchTimer.reset();
-
-            while (opModeIsActive()) {
-
-                handleDriveControl();
-
-                // Handles velocity setting (D-pad) and motor activation (Y)
-                handleLauncherControl();
-
-                // Check if enough time has passed since the motor was activated (Y pressed)
-                if (launcherMotor.getPower() != 0 && launchTimer.milliseconds() >= VELOCITY_SETTLE_TIME_MS) {
-                    isVelocityStable = true;
-                    telemetry.addData("LAUNCHER STATUS", "Velocity STABLE. Ready for A/B log.");
-                } else if (launcherMotor.getPower() != 0) {
-                    isVelocityStable = false;
-                    telemetry.addData("LAUNCHER STATUS", "Warming up... %.0f / %.0f ms", launchTimer.milliseconds(), VELOCITY_SETTLE_TIME_MS);
-                } else {
-                    isVelocityStable = false;
-                    telemetry.addData("LAUNCHER STATUS", "IDLE. Press Y to activate motor.");
-                }
-
-
-                // Get and set all data fields (AprilTag, Motor, System)
-                logAprilTagTelemetry();
-                logMotorVelocity();
-                logSystemVoltage();
-
-                // --- CRITICAL LOGGING LOGIC ---
-                // Data is logged ONLY if A or B is pressed AND the velocity has stabilized.
-
-                fSuccessStatus.set(0); // Default status is IDLE/NOT LOGGED
-
-                boolean currentAState = gamepad1.a; // Success button
-                boolean currentBState = gamepad1.b; // Failure button
-
-                // Log only on rising edge of A or B
-                boolean loggingTriggered = false;
-
-                if (isVelocityStable) {
-                    // Rising edge detection for Success button (A)
-                    if (currentAState && !prevAState) {
-                        fSuccessStatus.set(1); // Set status to SUCCESS
-                        datalogger.writeLine();
-                        telemetry.addData("Data Log Status", ">> SUCCESS LOGGED << (Status=1)");
-                        loggingTriggered = true;
-                    }
-
-                    // Rising edge detection for Failure button (B)
-                    else if (currentBState && !prevBState) {
-                        fSuccessStatus.set(-1); // Set status to FAILURE
-                        datalogger.writeLine();
-                        telemetry.addData("Data Log Status", ">> FAILURE LOGGED << (Status=-1)");
-                        loggingTriggered = true;
-                    }
-                } else if (currentAState || currentBState) {
-                    // Prevent logging if not stable
-                    telemetry.addData("Data Log Status", "ERROR: Launch outcome not logged. Velocity must be stable (Y active for %.0f ms).", VELOCITY_SETTLE_TIME_MS);
-                }
-
-                // If a log event happened, we can consider resetting the motor if needed,
-                // but usually, you want to manually turn it off with Y again.
-
-                // Update state for next loop iteration
-                prevAState = currentAState;
-                prevBState = currentBState;
-                // -----------------------------
-
-                // Update telemetry on the Driver Station
-                telemetry.update();
-
-                idle();
+            // Set drive motor modes
+            DcMotorEx[] driveMotors = {motorLeftFront, motorLeftBack, motorRightFront, motorRightBack};
+            for (DcMotorEx motor : driveMotors) {
+                motor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             }
-        }
 
-        datalogger.close();
+            // Set launcher motor mode
+            motorLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            motorLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+            // Initialize the battery sensor using the standard FTC VoltageSensor interface
+            batterySensor = hardwareMap.voltageSensor.iterator().next();
+
+        } catch (Exception e) {
+            telemetry.addData("Error", "Hardware initialization failed: " + e.getMessage());
+            // If any critical motor fails, stop the OpMode.
+            throw new RuntimeException("Hardware initialization failed", e);
+        }
     }
 
-    // --- Initializers ---
-
-    private void initAprilTag() {
-        aprilTag = new AprilTagProcessor.Builder().build();
+    private void initVision() {
+        aprilTagProcessor = new AprilTagProcessor.Builder()
+                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
+                .setDrawTagID(true)
+                .setDrawTagOutline(true)
+                .setDrawAxes(true)
+                .setDrawCubeProjection(true)
+                // REMOVED: setDecimation(2) which is no longer a valid method.
+                .build();
 
         visionPortal = new VisionPortal.Builder()
-                .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
-                .addProcessor(aprilTag)
+                .addProcessor(aprilTagProcessor)
+                .setStreamFormat(VisionPortal.StreamFormat.YUY2)
                 .build();
     }
 
-    private void initDataLogger() {
-        // Define all combined fields to be logged
-        fTime = new Datalogger.GenericField("Timestamp_ms");
-        fID = new Datalogger.GenericField("AprilTag_ID");
-        fRange = new Datalogger.GenericField("Range_in");
-        fBearing = new Datalogger.GenericField("Bearing_deg");
-        fElevation = new Datalogger.GenericField("Elevation_deg");
-        fDriveMotorPower = new Datalogger.GenericField("Avg_Drive_Motor_Power");
-        fDriveMotorVelocity = new Datalogger.GenericField("Avg_Drive_Motor_Velocity_ticks");
+    // =========================================================================================
+    // Main Loop Logic
+    // =========================================================================================
 
-        fLauncherCurrentVel = new Datalogger.GenericField("Launcher_Current_Velocity_ticks");
-        fLauncherTargetVel = new Datalogger.GenericField("Launcher_Target_Velocity_ticks");
-        fSuccessStatus = new Datalogger.GenericField("Success_Status"); // NEW LOGIC: 0, 1, or -1
+    private void handleInput() {
+        // Velocity Adjustment (DPAD Up/Down)
+        boolean currentDpadUp = gamepad1.dpad_up;
+        if (currentDpadUp && !dpadUpPressed) {
+            targetLauncherVelocity += VELOCITY_INCREMENT;
+            if (targetLauncherVelocity > MAX_VELOCITY) targetLauncherVelocity = MAX_VELOCITY;
+        }
+        dpadUpPressed = currentDpadUp;
 
-        fBatteryVoltage = new Datalogger.GenericField("BatteryVoltage_V");
-        fIsLaunching = new Datalogger.GenericField("Launcher_Motor_Active"); // Logs state of Y button
+        boolean currentDpadDown = gamepad1.dpad_down;
+        if (currentDpadDown && !dpadDownPressed) {
+            targetLauncherVelocity -= VELOCITY_INCREMENT;
+            if (targetLauncherVelocity < MIN_VELOCITY) targetLauncherVelocity = MIN_VELOCITY;
+        }
+        dpadDownPressed = currentDpadDown;
 
-        // Build the Datalogger
-        datalogger = new Datalogger.Builder()
-                .setFilename("Localization_Launcher_Combined_Data") // New, descriptive filename
-                .setFields(fTime, fID, fRange, fBearing, fElevation,
-                        fDriveMotorPower, fDriveMotorVelocity, fBatteryVoltage,
-                        fLauncherCurrentVel, fLauncherTargetVel, fSuccessStatus, fIsLaunching)
-                .setAutoTimestamp(Datalogger.AutoTimestamp.NONE)
-                .build();
+        // Launcher Activation (Y Button)
+        boolean currentY = gamepad1.y;
+        if (currentY && !yPressed) {
+            isLauncherActive = !isLauncherActive;
+            if (isLauncherActive) {
+                motorLauncher.setVelocity(targetLauncherVelocity);
+            } else {
+                motorLauncher.setPower(0);
+            }
+        }
+        yPressed = currentY;
+
+        // Log Launch Outcome (A for Success, B for Failure)
+        boolean currentA = gamepad1.a;
+        if (currentA && !aPressed) {
+            logLaunchOutcome("SUCCESS");
+        }
+        aPressed = currentA;
+
+        boolean currentB = gamepad1.b;
+        if (currentB && !bPressed) {
+            logLaunchOutcome("FAILURE");
+        }
+        bPressed = currentB;
+
+        // Telemetry Update
+        telemetry.addData("Target Velocity", "%.0f Ticks/s", targetLauncherVelocity);
+        telemetry.addData("Launcher Status", isLauncherActive ? "ACTIVE" : "IDLE");
+        telemetry.addData("Actual Velocity", "%.0f Ticks/s", actualLauncherVelocity);
+        telemetry.addData("Loop Count", loopCounter);
     }
 
-    // --- Control Handlers ---
+    private void mainLoop() {
+        // Set motor power based on gamepad sticks (for driving while logging)
+        double drive = -gamepad1.left_stick_y;
+        double strafe = gamepad1.left_stick_x;
+        double turn = gamepad1.right_stick_x;
 
-    private void handleDriveControl() {
-        // Mecanum Kinematics
-        double drive = -gamepad1.left_stick_y; // Forward/Backward
-        double strafe = gamepad1.left_stick_x;  // Strafe Left/Right
-        double turn  = gamepad1.right_stick_x; // Rotation
+        double frontLeftPower = drive + strafe + turn;
+        double frontRightPower = drive - strafe - turn;
+        double backLeftPower = drive - strafe + turn;
+        double backRightPower = drive + strafe - turn;
 
-        double leftFrontPower = drive + strafe + turn;
-        double leftBackPower = drive - strafe + turn;
-        double rightFrontPower = drive - strafe - turn;
-        double rightBackPower = drive + strafe - turn;
+        motorLeftFront.setPower(frontLeftPower);
+        motorRightFront.setPower(frontRightPower);
+        motorLeftBack.setPower(backLeftPower);
+        motorRightBack.setPower(backRightPower);
 
-        // Find the maximum power to ensure no motor power exceeds 1.0
-        double maxPower = Math.max(Math.abs(leftFrontPower),
-                Math.max(Math.abs(leftBackPower),
-                        Math.max(Math.abs(rightFrontPower), Math.abs(rightBackPower))));
+        // Update all logging variables
+        opModeStatus = "RUNNING";
+        logLauncherState();
+        logApriltagLocalization();
+        logMotorVelocity();
+        logSystemVoltage();
 
-        // Scale powers if necessary to keep them within the [-1.0, 1.0] range
-        if (maxPower > 1.0) {
-            leftFrontPower /= maxPower;
-            leftBackPower /= maxPower;
-            rightFrontPower /= maxPower;
-            rightBackPower /= maxPower;
-        }
+        // Write to datalog
+        datalog.log(
+                opModeStatus,
+                loopCounter,
+                targetLauncherVelocity,
+                actualLauncherVelocity,
+                isLauncherActive ? "TRUE" : "FALSE",
+                driveMotorVelocityAvg,
+                batteryVoltage,
+                launchOutcome,
+                aprilTagId,
+                aprilTagRange,
+                aprilTagBearing,
+                aprilTagElevation
+        );
+        loopCounter++; // Increment counter after logging
 
-        // Apply power, multiplied by the overall DRIVE_SPEED constant
-        motorLeftFront.setPower(leftFrontPower * DRIVE_SPEED);
-        motorLeftBack.setPower(leftBackPower * DRIVE_SPEED);
-        motorRightFront.setPower(rightFrontPower * DRIVE_SPEED);
-        motorRightBack.setPower(rightBackPower * DRIVE_SPEED);
-
-        // Log average motor power (average of the four absolute applied powers)
-        double avgAppliedPower = (Math.abs(leftFrontPower) + Math.abs(leftBackPower) +
-                Math.abs(rightFrontPower) + Math.abs(rightBackPower)) / 4.0;
-
-        fDriveMotorPower.set("%.3f", avgAppliedPower * DRIVE_SPEED);
+        telemetry.update();
     }
 
-    private void handleLauncherControl() {
-        // --- 1. Adjust Target Velocity (Incremental D-pad) ---
-        if (gamepad1.dpad_up) {
-            currentTargetVelocity += VELOCITY_INCREMENT;
-            sleep(100); // Debounce
-        }
-        if (gamepad1.dpad_down) {
-            currentTargetVelocity -= VELOCITY_INCREMENT;
-            sleep(100); // Debounce
-        }
-        currentTargetVelocity = Math.max(0, currentTargetVelocity); // Velocity cannot be negative
+    private void logLaunchOutcome(String outcome) {
+        // Set logging variables for final log entry
+        opModeStatus = "LAUNCH_OUTCOME";
+        launchOutcome = outcome;
+        logLauncherState();
+        logApriltagLocalization();
+        logMotorVelocity();
+        logSystemVoltage();
 
-        // --- 2. Apply Target Velocity to Motor (The Launch Button: Y) ---
-        boolean currentYState = gamepad1.y;
+        // Write to datalog
+        datalog.log(
+                opModeStatus,
+                loopCounter,
+                targetLauncherVelocity,
+                actualLauncherVelocity,
+                isLauncherActive ? "TRUE" : "FALSE",
+                driveMotorVelocityAvg,
+                batteryVoltage,
+                launchOutcome,
+                aprilTagId,
+                aprilTagRange,
+                aprilTagBearing,
+                aprilTagElevation
+        );
+        loopCounter++; // Increment counter after logging
 
-        if (currentYState && !prevYState) {
-            // Rising edge: Start the motor and reset the timer
-            launcherMotor.setVelocity(currentTargetVelocity);
-            launchTimer.reset();
-        } else if (!currentYState && prevYState) {
-            // Falling edge: Stop the motor
-            launcherMotor.setPower(0);
-            isVelocityStable = false; // Reset stability flag when motor stops
-        }
-
-        // Hold Y to keep motor running at set velocity
-        if (currentYState) {
-            launcherMotor.setVelocity(currentTargetVelocity);
-            fIsLaunching.set(1); // Launcher motor is actively spinning
-        } else {
-            launcherMotor.setPower(0);
-            fIsLaunching.set(0); // Launcher motor is off
-        }
-
-        prevYState = currentYState;
-
-        // --- 3. Update Launcher Fields ---
-        fLauncherTargetVel.set("%.0f", currentTargetVelocity);
-        fLauncherCurrentVel.set("%.0f", launcherMotor.getVelocity());
-
-        telemetry.addData("TARGET VELOCITY", "%.0f Ticks/Sec (D-pad)", currentTargetVelocity);
-        telemetry.addData("ACTUAL VELOCITY", "%.0f Ticks/Sec", launcherMotor.getVelocity());
+        // Reset state after logging the outcome
+        isLauncherActive = false;
+        motorLauncher.setPower(0);
+        launchOutcome = "N/A"; // Clear outcome field for subsequent logs
+        telemetry.addData("Launch Logged", outcome);
+        telemetry.update();
     }
 
+    private void stopAllMotors() {
+        motorLeftFront.setPower(0);
+        motorLeftBack.setPower(0);
+        motorRightFront.setPower(0);
+        motorRightBack.setPower(0);
+        motorLauncher.setPower(0);
+    }
 
-    // --- Data Logging Methods ---
+    // =========================================================================================
+    // Logging Helper Methods - now only update local variables
+    // =========================================================================================
 
-    private void logAprilTagTelemetry() {
-        List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+    private void logLauncherState() {
+        actualLauncherVelocity = motorLauncher.getVelocity();
+    }
 
-        // Initialize fields to default/safe values
-        fTime.set("%d", System.currentTimeMillis());
-        fID.set("NONE");
-        fRange.set(0.0);
-        fBearing.set(0.0);
-        fElevation.set(0.0);
+    private void logApriltagLocalization() {
+        // Reset localization fields
+        aprilTagId = -1;
+        aprilTagRange = 0.0;
+        aprilTagBearing = 0.0;
+        aprilTagElevation = 0.0;
 
-        if (!currentDetections.isEmpty()) {
+        List<AprilTagDetection> currentDetections = aprilTagProcessor.getDetections();
+
+        if (currentDetections.size() > 0) {
             AprilTagDetection bestDetection = null;
             double minRange = Double.MAX_VALUE;
 
-            // Find the closest tag
+            // Find the best detection (e.g., closest detection of the target ID)
             for (AprilTagDetection detection : currentDetections) {
-                if (detection.ftcPose.range < minRange) {
+                if (detection.id == APRIL_TAG_ID && detection.ftcPose.range < minRange) {
                     minRange = detection.ftcPose.range;
                     bestDetection = detection;
                 }
             }
 
             if (bestDetection != null) {
-                // Log the key localization data
-                fID.set(bestDetection.id);
-                fRange.set("%.3f", bestDetection.ftcPose.range);
-                fBearing.set("%.3f", bestDetection.ftcPose.bearing);
-                fElevation.set("%.3f", bestDetection.ftcPose.elevation);
+                // Store the key localization data
+                aprilTagId = bestDetection.id;
+                aprilTagRange = bestDetection.ftcPose.range;
+                aprilTagBearing = bestDetection.ftcPose.bearing;
+                aprilTagElevation = bestDetection.ftcPose.elevation;
 
-                telemetry.addData("Range to Tag", "%.2f in", bestDetection.ftcPose.range); // Telemetry for distance
+                telemetry.addData("Range to Tag", "%.2f in", bestDetection.ftcPose.range);
             }
         } else {
             telemetry.addData("Range to Tag", "N/A (No Tag Detected)");
@@ -386,15 +364,71 @@ public class LauncherDataCollector extends LinearOpMode {
         double rightFrontVel = motorRightFront.getVelocity();
         double rightBackVel = motorRightBack.getVelocity();
 
-        double avgVelocity = (Math.abs(leftFrontVel) + Math.abs(leftBackVel) +
+        driveMotorVelocityAvg = (Math.abs(leftFrontVel) + Math.abs(leftBackVel) +
                 Math.abs(rightFrontVel) + Math.abs(rightBackVel)) / 4.0;
-
-        fDriveMotorVelocity.set("%.0f", avgVelocity);
     }
 
     private void logSystemVoltage() {
-        double voltage = batterySensor.getVoltage();
-        fBatteryVoltage.set("%.2f", voltage); // Log voltage to two decimal places
-        telemetry.addData("Battery", "Voltage: %.2f V", voltage);
+        batteryVoltage = batterySensor.getVoltage();
+        telemetry.addData("Battery", "Voltage: %.2f V", batteryVoltage);
+    }
+
+    // =========================================================================================
+    // DATALOG Class Definition
+    // =========================================================================================
+
+    /**
+     * This class encapsulates all the fields that will go into the datalog.
+     * It uses the new, simplified Datalogger that requires manual String array formatting.
+     */
+    public static class Datalog implements AutoCloseable {
+        private final Datalogger datalogger;
+
+        // The headers, strictly maintaining the order for the log file
+        private static final String[] HEADERS = new String[]{
+                "OpModeStatus", "LoopCounter", "TargetVelocity", "ActualVelocity",
+                "IsLauncherActive", "DriveVelocityAvg", "BatteryVoltage", "LaunchOutcome",
+                "AprilTagID", "Range", "Bearing", "Elevation"
+        };
+
+        /**
+         * @param name filename for output log
+         */
+        public Datalog(String name)
+        {
+            this.datalogger = new Datalogger(name, HEADERS);
+        }
+
+        /**
+         * Logs a single line of data by manually formatting the values.
+         */
+        public void log(String opModeStatus, int loopCounter, double targetVel, double actualVel,
+                        String isActive, double driveVel, double voltage, String outcome,
+                        int id, double range, double bearing, double elevation) {
+
+            // Manually construct the string array for the Datalogger.log() method, applying formatting here.
+            datalogger.log(
+                    opModeStatus,
+                    String.valueOf(loopCounter),
+                    String.format("%.0f", targetVel),
+                    String.format("%.0f", actualVel),
+                    isActive,
+                    String.format("%.0f", driveVel),
+                    String.format("%.2f", voltage),
+                    outcome,
+                    String.valueOf(id),
+                    id != -1 ? String.format("%.3f", range) : "N/A",
+                    id != -1 ? String.format("%.3f", bearing) : "N/A",
+                    id != -1 ? String.format("%.3f", elevation) : "N/A"
+            );
+        }
+
+        /**
+         * Closes the datalogger.
+         */
+        @Override
+        public void close() {
+            datalogger.close();
+        }
     }
 }

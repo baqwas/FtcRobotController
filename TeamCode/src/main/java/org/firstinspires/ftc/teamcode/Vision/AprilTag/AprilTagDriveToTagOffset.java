@@ -31,8 +31,7 @@ package org.firstinspires.ftc.teamcode.Vision.AprilTag;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
@@ -53,7 +52,7 @@ import java.util.concurrent.TimeUnit;
  */
 
 @Autonomous(name="Drive To AprilTag - Continuous Offsets", group = "AprilTag")
-@Disabled
+//@Disabled
 public class AprilTagDriveToTagOffset extends LinearOpMode
 {
     // Adjust these numbers to suit your robot.
@@ -78,10 +77,10 @@ public class AprilTagDriveToTagOffset extends LinearOpMode
     final double MAX_AUTO_STRAFE= 0.5;   // Clip the strafing speed to this max value (adjust for your robot)
     final double MAX_AUTO_TURN  = 0.3;   // Clip the turn speed to this max value (adjust for your robot)
 
-    private DcMotor frontLeftDrive = null;
-    private DcMotor frontRightDrive = null;
-    private DcMotor backLeftDrive = null;
-    private DcMotor backRightDrive = null;
+    private DcMotorEx frontLeftDrive = null;
+    private DcMotorEx frontRightDrive = null;
+    private DcMotorEx backLeftDrive = null;
+    private DcMotorEx backRightDrive = null;
 
     private static final boolean USE_WEBCAM = true;
     private static final int DESIRED_TAG_ID = -1;     // Set to -1 for ANY tag.
@@ -98,15 +97,15 @@ public class AprilTagDriveToTagOffset extends LinearOpMode
 
         initAprilTag();
 
-        frontLeftDrive = hardwareMap.get(DcMotor.class, "motorLeftFront");
-        frontRightDrive = hardwareMap.get(DcMotor.class, "motorRightFront");
-        backLeftDrive = hardwareMap.get(DcMotor.class, "motorLeftBack");
-        backRightDrive = hardwareMap.get(DcMotor.class, "motorRightBack");
+        frontLeftDrive = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+        frontRightDrive = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+        backLeftDrive = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+        backRightDrive = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
-        frontLeftDrive.setDirection(DcMotor.Direction.REVERSE);
-        backLeftDrive.setDirection(DcMotor.Direction.REVERSE);
-        frontRightDrive.setDirection(DcMotor.Direction.FORWARD);
-        backRightDrive.setDirection(DcMotor.Direction.FORWARD);
+        frontLeftDrive.setDirection(DcMotorEx.Direction.REVERSE);
+        backLeftDrive.setDirection(DcMotorEx.Direction.REVERSE);
+        frontRightDrive.setDirection(DcMotorEx.Direction.FORWARD);
+        backRightDrive.setDirection(DcMotorEx.Direction.FORWARD);
 
         if (USE_WEBCAM)
             setManualExposure(6, 250);

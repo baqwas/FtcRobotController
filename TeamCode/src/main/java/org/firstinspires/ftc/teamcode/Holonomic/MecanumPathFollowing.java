@@ -39,6 +39,7 @@ import org.firstinspires.ftc.teamcode.Holonomic.MecanumPathPlanner;
 import org.firstinspires.ftc.teamcode.Holonomic.PurpleGreenDetector;
 import org.firstinspires.ftc.teamcode.Holonomic.GridManager;
 import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import org.firstinspires.ftc.teamcode.Utility.BatteryVoltageSensor; // NEW IMPORT
 
 import java.util.List;
 
@@ -76,21 +77,27 @@ public class MecanumPathFollowing extends LinearOpMode {
     private double currentX;
     private double currentY;
 
-    private Datalogger datalogger;
-    private Datalogger.GenericField currentXField;
-    private Datalogger.GenericField currentYField;
-    private Datalogger.GenericField frontLeftPowerField;
-    private Datalogger.GenericField frontRightPowerField;
-    private Datalogger.GenericField backLeftPowerField;
-    private Datalogger.GenericField backRightPowerField;
+    // NEW: Datalogger is instantiated directly with headers
+    private final Datalogger datalogger = new Datalogger(
+            "DynamicPathingData",
+            "CurrentX", "CurrentY",
+            "FrontLeftPower", "FrontRightPower", "BackLeftPower", "BackRightPower",
+            "Battery"
+    );
+
+    // REMOVED: All Datalogger.GenericField declarations
+
+    // NEW: Battery Sensor field
+    private BatteryVoltageSensor batterySensor = null;
 
     @Override
     public void runOpMode() throws InterruptedException {
         initializeHardware();
         initializeVision();
-        initializeDatalogger();
+        // initializeDatalogger() now handles BatterySensor setup
 
         // Initialize the odometry system
+        // Note: Odometry class is assumed to exist in the teamcode
         odometry = new Odometry(odometryLeft, odometryRight, odometryStrafe);
         currentX = START_COL;
         currentY = START_ROW;
@@ -157,6 +164,9 @@ public class MecanumPathFollowing extends LinearOpMode {
             telemetry.addData("Status", "Path complete! OpMode finished.");
             telemetry.update();
         }
+
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
 
     private void initializeHardware() {
@@ -187,6 +197,13 @@ public class MecanumPathFollowing extends LinearOpMode {
         odometryLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         odometryRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         odometryStrafe.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+
+        // NEW: Initialize Battery Sensor
+        try {
+            batterySensor = new BatteryVoltageSensor(hardwareMap);
+        } catch (Exception e) {
+            telemetry.addData("ERROR", "Could not initialize Battery Voltage Sensor.");
+        }
     }
 
     private void initializeVision() {
@@ -208,21 +225,8 @@ public class MecanumPathFollowing extends LinearOpMode {
         });
     }
 
-    private void initializeDatalogger() {
-        datalogger = new Datalogger.Builder()
-                .setFilename("DynamicPathingData")
-                .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS)
-                .setFields(
-                        currentXField = new Datalogger.GenericField("CurrentX"),
-                        currentYField = new Datalogger.GenericField("CurrentY"),
-                        frontLeftPowerField = new Datalogger.GenericField("FrontLeftPower"),
-                        frontRightPowerField = new Datalogger.GenericField("FrontRightPower"),
-                        backLeftPowerField = new Datalogger.GenericField("BackLeftPower"),
-                        backRightPowerField = new Datalogger.GenericField("BackRightPower")
-                )
-                .build();
-    }
-
+    // REMOVED: initializeDatalogger() content, as Datalogger is now a field
+    // and Battery Sensor setup is in initializeHardware().
     private void driveToPoint(int targetRow, int targetCol) {
         // Now, this method only controls the motors and logs data
         while (opModeIsActive() && (Math.abs(currentX - targetCol) > POSITIONAL_TOLERANCE || Math.abs(currentY - targetRow) > POSITIONAL_TOLERANCE)) {
@@ -243,14 +247,18 @@ public class MecanumPathFollowing extends LinearOpMode {
             backLeft.setPower(forwardPower - strafePower + rotationPower);
             backRight.setPower(forwardPower + strafePower - rotationPower);
 
-            // Log data
-            currentXField.set(currentX);
-            currentYField.set(currentY);
-            frontLeftPowerField.set(frontLeft.getPower());
-            frontRightPowerField.set(frontRight.getPower());
-            backLeftPowerField.set(backLeft.getPower());
-            backRightPowerField.set(backRight.getPower());
-            datalogger.writeLine();
+            // NEW LOGGING METHOD
+            String batteryVoltage = (batterySensor != null) ? batterySensor.getFormattedVoltage() : "N/A";
+
+            datalogger.log(
+                    String.format("%.2f", currentX),
+                    String.format("%.2f", currentY),
+                    String.format("%.4f", frontLeft.getPower()),
+                    String.format("%.4f", frontRight.getPower()),
+                    String.format("%.4f", backLeft.getPower()),
+                    String.format("%.4f", backRight.getPower()),
+                    batteryVoltage
+            );
         }
         stopAllMotors();
     }

@@ -101,34 +101,28 @@
 
 package org.firstinspires.ftc.teamcode.Match.Auto;
 
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.IMU; // NEW: Universal IMU Interface
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // Required for setup
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;// For reading IMU data
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-// AprilTag Imports
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
+import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
-import java.util.List;
 
-// --- Datalogger Imports ---
-import org.firstinspires.ftc.teamcode.Utility.Datalogger;
+import java.util.List;
 // --- IMU Universal Imports ---
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot; // NEW: For IMU mounting config
-import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;       // NEW: To get angles from IMU
-import static org.firstinspires.ftc.robotcore.external.navigation.AngleUnit.DEGREES; // Static import for clarity
+
 // --------------------------
 
-@Autonomous(name = "Meet 1 Auto", group = "Match", preselectTeleOp="TeleOpPreviewEvent")
+@Autonomous(name = "Test Drive to AprilTag", group = "Match", preselectTeleOp="TeleOpPreviewEvent")
 //@Disabled
-public class AutoMeet1 extends LinearOpMode {
+public class TestdriveToAprilTag extends LinearOpMode {
     private final String TAG = this.getClass().getSimpleName();
     private Datalogger datalogger = null;
 
@@ -280,7 +274,7 @@ public class AutoMeet1 extends LinearOpMode {
                         // This helper function handles the drive and state transition upon success or timeout
                         driveToAprilTag();
                         // Transition to the next state
-                        current_state = AutoState.LAUNCH;
+                        current_state = AutoState.LEAVE;
                         break;
 
                     case LAUNCH:
@@ -392,6 +386,7 @@ public class AutoMeet1 extends LinearOpMode {
                     targetReached = true;
                     current_state = AutoState.LAUNCH; // <--- This is the transition you asked about.
                     telemetry.addData("1. TRAVEL: Tag Reached!", "Moving to LAUNCH.");
+                    sleep(10000); // <=== allow time to view Driver Station status message
                     break;
                 }
 

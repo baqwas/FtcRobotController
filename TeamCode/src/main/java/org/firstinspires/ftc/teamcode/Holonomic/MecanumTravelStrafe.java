@@ -32,11 +32,11 @@
   <li> displays a few status messages</li>
   </ul>
   @author modified by armw
- * @version 1.1
+ * @version 1.2 - Converted to Universal IMU Interface and simplified Datalogger
  * @param none
  * @return none
  * @exception none
- * @see https://stemrobotics.cs.pdx.edu/node/7266
+ * @see https://stemrobototics.cs.pdx.edu/node/7266
  * <p>
  * This program registers as Autonomous OpMode in the FtcRobotController app.
  * The robot travels forward in a linear movement. When the touch sensor is pressed
@@ -133,7 +133,16 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 public class MecanumTravelStrafe extends LinearOpMode
 {
     private static final  String TAG = MecanumTravelStrafe.class.getSimpleName(); // for use in logging
-    Datalog datalog = new Datalog(TAG);
+
+    // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
+    private final Datalogger datalogger = new Datalogger(
+            TAG, // Filename
+            "OpModeStatus", "Yaw", "Pitch", "Roll", "GlobalAngle", "LastAngle",
+            "ticksKp", "yawKp", "YawError", "TicksError", "Correction", "TargetTicks",
+            "MotorTicks0", "MotorPower0", "MotorTicks1", "MotorPower1",
+            "MotorTicks2", "MotorPower2", "MotorTicks3", "MotorPower3"
+    );
+
     //static final double     TICKS_PER_INCH = 56.9887969189608; // REV Robotics HD Hex motor & 75mm Mecanum wheel
     // static final double     TICKS_PER_INCH = 45.283963; // goBILDA 5203 19.2:1 Motor 96mm Mecanum wheel
     static final double     TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 12.7:1 Motor 86mm Mecanum wheel
@@ -297,27 +306,30 @@ public class MecanumTravelStrafe extends LinearOpMode
                 {
                     motor[i].setPower(motorPower[i]);
                 }
-                datalog.yaw.set(currentYaw); // Use the current Yaw from Universal IMU
-                datalog.pitch.set(pitch);
-                datalog.roll.set(lateral);
-                datalog.globalAngle.set(globalAngle);
-                datalog.lastAngle.set(currentYaw); // Use the current Yaw for the 'lastAngle' log field
-                datalog.ticksKp.set(ticksKp);
-                datalog.yawKp.set(yawKp);
-                datalog.ticksError.set(ticksError);
-                datalog.yawError.set(yawError);
-                datalog.correction.set(correction);
-                datalog.targetTicks.set(travelTicks);
-                datalog.motorTicks0.set(motorTicks[0]);
-                datalog.motorPower0.set(motorPower[0]);
-                datalog.motorTicks1.set(motorTicks[1]);
-                datalog.motorPower1.set(motorPower[1]);
-                datalog.motorTicks2.set(motorTicks[2]);
-                datalog.motorPower2.set(motorPower[2]);
-                datalog.motorTicks3.set(motorTicks[3]);
-                datalog.motorPower3.set(motorPower[3]);
-                // The logged timestamp is taken when writeLine() is called.
-                datalog.writeLine();
+
+                // 2. UPDATED LOGGING CALL
+                datalogger.log(
+                        "RUNNING",
+                        String.format("%.4f", currentYaw),
+                        String.format("%.4f", pitch),
+                        String.format("%.4f", lateral), // Mapped to Roll
+                        String.format("%.4f", globalAngle),
+                        String.format("%.4f", currentYaw), // Mapped to LastAngle
+                        String.format("%.6f", ticksKp),
+                        String.format("%.6f", yawKp),
+                        String.format("%.6f", yawError),
+                        String.format("%.6f", ticksError),
+                        String.format("%.6f", correction),
+                        String.valueOf(travelTicks),
+                        String.valueOf(motorTicks[0]),
+                        String.format("%.4f", motorPower[0]),
+                        String.valueOf(motorTicks[1]),
+                        String.format("%.4f", motorPower[1]),
+                        String.valueOf(motorTicks[2]),
+                        String.format("%.4f", motorPower[2]),
+                        String.valueOf(motorTicks[3]),
+                        String.format("%.4f", motorPower[3])
+                );
             }
             else
             {
@@ -410,83 +422,9 @@ public class MecanumTravelStrafe extends LinearOpMode
             DriveStrafe(false, travelLength, 0.3);
         }
 
+        // CRITICAL: Close the datalogger when the OpMode ends
+        datalogger.close();
     }
 
-    /*
-     * This class encapsulates all the fields that will go into the datalog.
-     */
-    public static class Datalog
-    {
-        // The underlying datalogger object - it cares only about an array of loggable fields
-        private final Datalogger datalogger;
-
-        // These are all of the fields that we want in the datalog.
-        // Note that order here is NOT important. The order is important in the setFields() call below
-        public Datalogger.GenericField opModeStatus = new Datalogger.GenericField("OpModeStatus");
-        public Datalogger.GenericField yaw          = new Datalogger.GenericField("Yaw");
-        public Datalogger.GenericField pitch        = new Datalogger.GenericField("Pitch");
-        public Datalogger.GenericField roll         = new Datalogger.GenericField("Roll");
-        public Datalogger.GenericField globalAngle  = new Datalogger.GenericField("GlobalAngle");
-        public Datalogger.GenericField lastAngle    = new Datalogger.GenericField("LastAngle");
-        public Datalogger.GenericField ticksKp      = new Datalogger.GenericField("ticksKp");
-        public Datalogger.GenericField yawKp        = new Datalogger.GenericField("yawKp");
-        public Datalogger.GenericField yawError     = new Datalogger.GenericField("YawError");
-        public Datalogger.GenericField ticksError   = new Datalogger.GenericField("TicksError");
-        public Datalogger.GenericField correction   = new Datalogger.GenericField("Correction");
-        public Datalogger.GenericField targetTicks  = new Datalogger.GenericField("TargetTicks");
-        public Datalogger.GenericField motorTicks0   = new Datalogger.GenericField("MotorTicks0");
-        public Datalogger.GenericField motorPower0   = new Datalogger.GenericField("MotorPower0");
-        public Datalogger.GenericField motorTicks1   = new Datalogger.GenericField("MotorTicks1");
-        public Datalogger.GenericField motorPower1   = new Datalogger.GenericField("MotorPower1");
-        public Datalogger.GenericField motorTicks2   = new Datalogger.GenericField("MotorTicks2");
-        public Datalogger.GenericField motorPower2   = new Datalogger.GenericField("MotorPower2");
-        public Datalogger.GenericField motorTicks3   = new Datalogger.GenericField("MotorTicks3");
-        public Datalogger.GenericField motorPower3   = new Datalogger.GenericField("MotorPower3");
-
-        public Datalog(String name)
-        {
-            // Build the underlying datalog object
-            datalogger = new Datalogger.Builder()
-
-                    // Pass through the filename
-                    .setFilename(name)
-
-                    // Request an automatic timestamp field
-                    .setAutoTimestamp(Datalogger.AutoTimestamp.DECIMAL_SECONDS)
-
-                    // Tell it about the fields we care to log.
-                    // Note that order *IS* important here! The order in which we list
-                    // the fields is the order in which they will appear in the log.
-                    .setFields(
-                            opModeStatus,
-                            yaw,
-                            pitch,
-                            roll,
-                            globalAngle,
-                            lastAngle,
-                            ticksKp,
-                            yawKp,
-                            yawError,
-                            ticksError,
-                            correction,
-                            targetTicks,
-                            motorTicks0,
-                            motorPower0,
-                            motorTicks1,
-                            motorPower1,
-                            motorTicks2,
-                            motorPower2,
-                            motorTicks3,
-                            motorPower3
-                    )
-                    .build();
-        }
-
-        // Tell the datalogger to gather the values of the fields
-        // and write a new line in the log.
-        public void writeLine()
-        {
-            datalogger.writeLine();
-        }
-    }
+    // 3. REMOVED THE ENTIRE NESTED 'Datalog' CLASS
 }
