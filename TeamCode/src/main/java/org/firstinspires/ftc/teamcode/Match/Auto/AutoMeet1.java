@@ -82,8 +82,6 @@
  * DRIVE_GEAR_REDUCTION = 1.0
  * WHEEL_DIAMETER_MM = 75.0             REV Mecanum wheel
  * MM_TO_INCH = 0.03937008
- * TICKS_PER_INCH = (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * MM_TO_INCH * PI)
- * = 56.9887969189608
  * TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
  * <p>
  * Hardware map
@@ -97,6 +95,12 @@
  * sensorLED        n/a
  * gamepad2         USB2
  * </p>
+ * Gamepad buttons
+ * SDK Variable	Xbox Style	PS4 Style	    Position    Unicode
+ * gamepadX.a	A (Green)	× (Cross)	    Bottom      \u2715 - to confirm
+ * gamepadX.b	B (Red) 	◯ (Circle)	    Right       \u25ef - for BLUE
+ * gamepadX.x	X (Blue)	□ (Square)	    Left        \u25a1 - for RED
+ * gamepadX.y	Y (Yellow)	△ (Triangle)    Top         \u25b3 - unused
  */
 
 package org.firstinspires.ftc.teamcode.Match.Auto;
@@ -111,6 +115,7 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;// For reading IMU data
 import com.qualcomm.robotcore.hardware.TouchSensor;
+import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 // AprilTag Imports
@@ -118,6 +123,9 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDir
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 // --- Datalogger Imports ---
@@ -135,7 +143,13 @@ import static org.firstinspires.ftc.robotcore.external.navigation.AngleUnit.DEGR
 public class AutoMeet1 extends LinearOpMode {
     private final String TAG = this.getClass().getSimpleName();
     private Datalogger datalogger = null;
-
+    // Logging
+    // --- START: MODIFIED DATALOG DECLARATION ---
+    // Change to initialize in runOpMode() instead of here
+    private Datalog datalog = null;
+    private int loopCounter = 0;
+    private String opModeStatus = "INIT";
+    // --- END: MODIFIED DATALOG DECLARATION ---
     // --- FSM State Definitions ---
     enum AutoState {
         TRAVEL, // New: Uses AprilTags for navigation
@@ -143,13 +157,18 @@ public class AutoMeet1 extends LinearOpMode {
         LEAVE,
         AUTO_COMPLETE
     }
+    // --- AprilTag Control Constants ---
+    private static final int APRIL_TAG_ID = 20;              // Target AprilTag ID (change as needed)
+    private static final double MAX_POWER = 0.6;             // Max absolute power limit for motors
+    private static final double HEADING_TOLERANCE = 1.0;     // Angular tolerance (degrees)
+    private static final double RANGE_TOLERANCE = 0.5;       // Distance tolerance (inches)
 
     // --- Drivetrain Hardware Components ---
     private DcMotorEx motorLeftFront = null;
     private DcMotorEx motorLeftBack = null;
     private DcMotorEx motorRightFront = null;
     private DcMotorEx motorRightBack = null;
-
+    private VoltageSensor batterySensor;
     // CHANGED: Use the Universal IMU interface
     private IMU imu = null;
 
@@ -167,11 +186,11 @@ public class AutoMeet1 extends LinearOpMode {
     // Encoder constants for strafeLeft()
     private static final double TICKS_PER_INCH = 33.4308289114498;
     private static final double STRAFE_DISTANCE_INCHES = 12.0;
-    private static final double STRAFE_SPEED = 0.5;
+    private static final double STRAFE_SPEED = 0.3;
 
     // AprilTag Navigation Constants
     private static final int TARGET_TAG_ID = 5; // Example target ID
-    private static final double DESIRED_DISTANCE = 6.0; // Distance in inches to stop from the tag
+    private static final double DESIRED_DISTANCE = 24.0; // Distance in inches to stop from the tag
     private static final double CAMERA_OFFSET_X = 0.0; // Camera X-offset in inches (left/right)
     private static final double CAMERA_OFFSET_Y = 0.0; // Camera Y-offset in inches (forward/back)
     private static final double TRAVEL_TIMEOUT_SECONDS = 5.0; // NEW: Timeout for tag navigation
@@ -184,12 +203,33 @@ public class AutoMeet1 extends LinearOpMode {
     private static final double HEADING_THRESHOLD = 0.5; // Acceptable degree error for turn
     private static final double RANGE_THRESHOLD = 0.5;    // Acceptable inch error for range
 
-    private AutoState current_state = AutoState.TRAVEL;
+    private AutoState current_state = AutoState.LEAVE;
     private ElapsedTime runtime = new ElapsedTime();
+    // Enumerations for Alliance and Position
+    enum Alliance { RED, BLUE }
+    enum Position { POS1, POS2, POS3 }
+    // Variables for Alliance and Position
+    private AutoPreviewEvent2.Alliance alliance = AutoPreviewEvent2.Alliance.RED;
+    private AutoPreviewEvent2.Position position = AutoPreviewEvent2.Position.POS2;
 
     @Override
     public void runOpMode() {
         //datalog = new Datalog(TAG); // Datalog initialization
+        // --- START: NEW DATE/TIMESTAMP LOGIC ---
+        // 1. Define the desired date and time format for the filename.
+        // 'yyyyMMdd_HHmmss' formats to (e.g.) 20251030_171500 (YearMonthDay_HourMinuteSecond)
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss");
+
+        // 2. Get the current system date and time.
+        String timestamp = dateFormat.format(new Date());
+
+        // 3. Define the base filename and append the timestamp.
+        String baseFileName = TAG;
+        String datalogFilename = baseFileName + "_" + timestamp;
+
+        // 4. Instantiate the Datalog object with the unique filename
+        datalog = new Datalog(datalogFilename);
+        // --- END: NEW DATE/TIMESTAMP LOGIC ---
         // --- A. Hardware Mapping ---
         // Assuming your IMU is named "imu" in the configuration
         imu = hardwareMap.get(IMU.class, "imu");
@@ -239,6 +279,8 @@ public class AutoMeet1 extends LinearOpMode {
             // Must return/stop if hardware fails
             return;
         }
+        batterySensor = hardwareMap.voltageSensor.iterator().next();
+
 
         // Initialize AprilTag vision
         initAprilTag();
@@ -246,7 +288,7 @@ public class AutoMeet1 extends LinearOpMode {
         // 2. Setup Encoders and Telemetry
         resetEncoders();
 
-        telemetry.addData("Status", "Initialized and Ready");
+        telemetry.addData("Status", "Ready for selection");
         telemetry.addData("FSM Start", current_state);
         telemetry.addData("Target Tag", TARGET_TAG_ID);
         telemetry.update();
@@ -255,7 +297,7 @@ public class AutoMeet1 extends LinearOpMode {
         try {
             // 1. Initialize the Datalogger with a filename and column headers
             datalogger = new Datalogger(
-                    "AutoMeet1_Run",
+                    datalogFilename,
                     "Elapsed_Time_s",
                     "FSM_State",
                     "LF_Motor_Power",
@@ -265,7 +307,29 @@ public class AutoMeet1 extends LinearOpMode {
             telemetry.addData("ERROR", "Datalogger Init Failed: " + e.getMessage());
             datalogger = null; // Ensure datalogger is null if setup failed
         }
-        // ---------------------------------------
+        // --- Alliance and Starting position selection ---
+        // boolean selected = false;
+        while (!isStarted() && !isStopRequested()) { // && !selected) {
+            if (gamepad1.b) {
+                alliance = AutoPreviewEvent2.Alliance.BLUE;
+            } else if (gamepad1.x) {
+                alliance = AutoPreviewEvent2.Alliance.RED;
+            }
+            if (gamepad1.dpad_up) {
+                position = AutoPreviewEvent2.Position.POS1;
+            } else if (gamepad1.dpad_right) {
+                position = AutoPreviewEvent2.Position.POS2;
+            } else if (gamepad1.dpad_down) {
+                position = AutoPreviewEvent2.Position.POS3;
+            }
+            telemetry.addData("Alliance", "Press B|O for Blue, X|□ for Red");
+            telemetry.addData("Position", "Press D-pad Up/Right/Down for POS1/POS2/POS3");
+            // telemetry.addData("CONFIRM", "Press A|\u2715 to LOCK selection");// Use the cross symbol for the confirmation button (A / X)
+            telemetry.addData("Current Selection", "Alliance: %s, Position: %s", alliance.toString(), position.toString());
+            telemetry.update();
+        }
+        // Log the initial state
+        logData("INIT", "WAIT_FOR_START", 0, 0, 0);
 
         waitForStart();
         runtime.reset();
@@ -345,6 +409,8 @@ public class AutoMeet1 extends LinearOpMode {
         if (visionPortal != null) {
             visionPortal.close();
         }
+        logData(opModeStatus, "COMPLETE", 0, 0, 0);
+        datalog.close(); // CRITICAL: Close the datalogger to save data
 
     }
 
@@ -352,7 +418,13 @@ public class AutoMeet1 extends LinearOpMode {
      * Initializes the AprilTag processor and Vision Portal.
      */
     private void initAprilTag() {
-        aprilTag = new AprilTagProcessor.Builder().build();
+        aprilTag = new AprilTagProcessor.Builder()
+                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
+                .setDrawTagID(true)
+                .setDrawTagOutline(true)
+                .setDrawAxes(true)
+                .setDrawCubeProjection(true)
+                .build();
         aprilTag.setDecimation(2);
 
         if (USE_WEBCAM) {
@@ -414,15 +486,52 @@ public class AutoMeet1 extends LinearOpMode {
 
                 // Calculate the errors we need to correct
                 double rangeError = desiredTag.ftcPose.range - DESIRED_DISTANCE;
-                double headingError = desiredTag.ftcPose.yaw;
-                double yawError = desiredTag.ftcPose.bearing;
+                double bearingError = desiredTag.ftcPose.bearing;
+                double turnError = desiredTag.ftcPose.yaw;
 
 
                 // Use the speed and turn "gains" to calculate the motor powers.
                 drive  = Range.clip(rangeError * SPEED_GAIN, -MAX_AUTO_SPEED, MAX_AUTO_SPEED);
-                strafe = Range.clip(headingError * STRAFE_GAIN, -HEADING_THRESHOLD, HEADING_THRESHOLD);
-                turn   = Range.clip(headingError * TURN_GAIN, -RANGE_THRESHOLD, RANGE_THRESHOLD);
+                strafe = Range.clip(bearingError * STRAFE_GAIN, -HEADING_THRESHOLD, HEADING_THRESHOLD);
+                turn   = Range.clip(turnError * TURN_GAIN, -RANGE_THRESHOLD, RANGE_THRESHOLD);
+                // Use bearing for rotation if yaw is near zero or unset
+                if (Math.abs(turnError) < 0.001) {
+                    turn = Range.clip(bearingError * TURN_GAIN, -RANGE_THRESHOLD, RANGE_THRESHOLD);
+                }
 
+                // --- Calculate Mecanum Motor Powers ---
+                double leftFrontPower = drive + strafe + turn;
+                double rightFrontPower = drive - strafe - turn;
+                double leftBackPower = drive - strafe + turn;
+                double rightBackPower = drive + strafe - turn;
+
+                // Scale powers to prevent exceeding MAX_POWER
+                double max = Math.max(Math.abs(leftFrontPower), Math.abs(rightFrontPower));
+                max = Math.max(max, Math.abs(leftBackPower));
+                max = Math.max(max, Math.abs(rightBackPower));
+
+                if (max > MAX_AUTO_SPEED) {
+                    leftFrontPower /= max;
+                    rightFrontPower /= max;
+                    leftBackPower /= max;
+                    rightBackPower /= max;
+                }
+
+                // Apply powers
+                motorLeftFront.setPower(leftFrontPower);
+                motorRightFront.setPower(rightFrontPower);
+                motorLeftBack.setPower(leftBackPower);
+                motorRightBack.setPower(rightBackPower);
+
+                // Log data and telemetry
+                logData(opModeStatus, current_state.toString(), drive, strafe, turn);
+
+                // Check for completion
+                if (Math.abs(rangeError) < RANGE_THRESHOLD && Math.abs(bearingError) < HEADING_THRESHOLD) {
+                    telemetry.addData("FSM State", "TARGET_REACHED");
+                    stopAllMotors();
+                    return; // Exit the loop and finish the OpMode
+                }
                 telemetry.addData("Robot","Drive %5.2f, Strafe %5.2f, Turn %5.2f ", drive, strafe, turn);
                 telemetry.addData("Robot Position", "(X: %5.2f, Y: %5.2f)", robotCenterX, robotCenterY);
 
@@ -431,6 +540,7 @@ public class AutoMeet1 extends LinearOpMode {
                 drive = 0;
                 strafe = 0;
                 turn = 0;
+                logData(opModeStatus, "NOT FOUND", 0, 0, 0);
                 telemetry.addData("Status", "Target Not Found - Stopping");
             }
             telemetry.update();
@@ -440,6 +550,13 @@ public class AutoMeet1 extends LinearOpMode {
             moveRobot(drive, strafe, turn);
             sleep(10);
         }
+    }
+
+    private void stopAllMotors() {
+        motorLeftFront.setPower(0);
+        motorLeftBack.setPower(0);
+        motorRightFront.setPower(0);
+        motorRightBack.setPower(0);
     }
 
     /**
@@ -499,6 +616,10 @@ public class AutoMeet1 extends LinearOpMode {
      * This function blocks until the movement is complete.
      * @param inches The distance in inches to strafe left.
      * @param power The motor power to apply (0.0 to 1.0)
+     *              motorLeftFront  ==> -power
+     *              motorLeftBack   ==> +power
+     *              motorRightFront ==> +power
+     *              motorRightBack  ==> -power
      */
     private void strafeLeft(double inches, double power) {
         // Calculate the target position change in encoder ticks
@@ -539,7 +660,8 @@ public class AutoMeet1 extends LinearOpMode {
         while (opModeIsActive() &&
                 (motorLeftFront.isBusy() || motorLeftBack.isBusy() ||
                         motorRightFront.isBusy() || motorRightBack.isBusy())) {
-
+            // Log variables of interest
+            logData("StrafeLeft", current_state.toString(), power, power, power);
             // Display current motor status
             telemetry.addData("FSM State", "3. LEAVE: Executing Strafe");
             telemetry.addData("Target Ticks", "%d", targetTicks);
@@ -562,4 +684,143 @@ public class AutoMeet1 extends LinearOpMode {
         motorRightBack.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
     }
 
+
+    private AprilTagDetection getTargetDetection(int targetTagId) {
+        List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+
+        for (AprilTagDetection detection : currentDetections) {
+            if (detection.id == targetTagId) {
+                return detection;
+            }
+        }
+        return null; // Tag not found
+    }
+
+
+    private void logData(String status, String state, double drivePwr, double strafePwr, double turnPwr) {
+        // Get the current OpMode runtime
+        double time = getRuntime(); // <-- MODIFIED: Get runtime here
+
+        // Collect AprilTag Data
+        int aprilTagId = -1;
+        double aprilTagRange = 0.0;
+        double aprilTagBearing = 0.0;
+        double aprilTagElevation = 0.0;
+        double aprilTagYaw = 0.0;
+
+        AprilTagDetection targetDetection = getTargetDetection(APRIL_TAG_ID);
+
+        if (targetDetection != null) {
+            aprilTagId = targetDetection.id;
+            aprilTagRange = targetDetection.ftcPose.range;
+            aprilTagBearing = targetDetection.ftcPose.bearing;
+            aprilTagElevation = targetDetection.ftcPose.elevation;
+            aprilTagYaw = targetDetection.ftcPose.yaw;
+            telemetry.addData("Tag Range/Bearing/Yaw", "%.1f / %.1f / %.1f", aprilTagRange, aprilTagBearing, aprilTagYaw);
+        } else {
+            // If tag is not found, these variables remain 0.0, which is logged to the CSV
+            telemetry.addData("Tag Status", "NOT FOUND");
+        }
+
+        // Log to file - Pass 'time' as the first argument
+        datalog.log(
+                time, // <-- MODIFIED: This is Field 1: Time(s)
+                status,
+                state,
+                (int)APRIL_TAG_ID,
+                aprilTagId,
+                aprilTagRange,
+                aprilTagBearing,
+                aprilTagElevation,
+                aprilTagYaw,
+                motorLeftFront.getCurrentPosition(),
+                motorRightFront.getCurrentPosition(),
+                motorLeftBack.getCurrentPosition(),
+                motorRightBack.getCurrentPosition(),
+                drivePwr,
+                strafePwr,
+                turnPwr,
+                batterySensor.getVoltage()
+        );
+        loopCounter++;
+    }
+
+    // =========================================================================================
+    // DATALOG Class Definition (Assuming Datalogger.java exists in org.firstinspires.ftc.teamcode.Utility)
+    // =========================================================================================
+
+    /**
+     * This class encapsulates all the fields that will go into the datalog.
+     * It uses the simplified Datalogger that requires manual String array formatting.
+     */
+    public static class Datalog implements AutoCloseable {
+        private final Datalogger datalogger;
+
+        // The headers, strictly maintaining the order for the log file
+        private static final String[] HEADERS = new String[]{
+                "Time(s)", // <-- MODIFIED: Added timestamp header
+                "OpModeStatus",
+                "FSMState",
+                "TargetTagID", "DetectedTagID",
+                "Range", "Bearing", "Elevation", "Yaw",
+                "LFPos", "RFPos", "LBPos", "RBPos",
+                "DrivePwr", "StrafePwr", "TurnPwr", "BatteryVoltage"
+        };
+
+        /**
+         * @param name filename for output log
+         */
+        public Datalog(String name)
+        {
+            // The Datalogger constructor handles file creation and header writing.
+            this.datalogger = new Datalogger(name, HEADERS);
+        }
+
+        /**
+         * Logs a single line of data by manually formatting the values.
+         */
+        public void log(
+                double time, // <-- MODIFIED: Added time argument (1st field)
+                String opModeStatus, // 2nd field
+                String fsmState, // 3rd field
+                int targetId, // 4th field
+                int detectedId, // 5th field
+                double range, double bearing, double elevation, double yaw, // 6th - 9th fields
+                int lfPos, int rfPos, int lbPos, int rbPos, // 10th - 13th fields
+                double drivePwr, double strafePwr, double turnPwr, // 14th - 16th fields
+                double voltage) { // 17th field
+
+            String detectedIdStr = (detectedId != -1) ? String.valueOf(detectedId) : "N/A";
+
+            // Manually construct the string array for the Datalogger.log() method, applying formatting here.
+            // **CRITICAL: The order below MUST match the order in the HEADERS array.**
+            datalogger.log(
+                    String.format("%.3f", time), // <-- MODIFIED: Log formatted time
+                    opModeStatus,
+                    fsmState,
+                    String.valueOf(targetId),
+                    detectedIdStr,
+                    (detectedId != -1) ? String.format("%.3f", range) : "N/A",
+                    (detectedId != -1) ? String.format("%.3f", bearing) : "N/A",
+                    (detectedId != -1) ? String.format("%.3f", elevation) : "N/A",
+                    (detectedId != -1) ? String.format("%.3f", yaw) : "N/A",
+                    String.valueOf(lfPos),
+                    String.valueOf(rfPos),
+                    String.valueOf(lbPos),
+                    String.valueOf(rbPos),
+                    String.format("%.3f", drivePwr),
+                    String.format("%.3f", strafePwr),
+                    String.format("%.3f", turnPwr),
+                    String.format("%.2f", voltage)
+            );
+        }
+
+        /**
+         * Closes the datalogger.
+         */
+        @Override
+        public void close() {
+            datalogger.close();
+        }
+    }
 }

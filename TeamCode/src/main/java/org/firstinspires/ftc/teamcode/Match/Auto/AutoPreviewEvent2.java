@@ -100,6 +100,8 @@ public class AutoPreviewEvent2 extends LinearOpMode
             telemetry.addData("FATAL ERROR", "Drive motor initialization failed: " + e.getMessage());
             telemetry.update();
             // Movement functions will check for null motors and be non-functional
+            sleep(5000);
+            return;
         }
 
         // --- 2. INITIALIZE VISION ---
