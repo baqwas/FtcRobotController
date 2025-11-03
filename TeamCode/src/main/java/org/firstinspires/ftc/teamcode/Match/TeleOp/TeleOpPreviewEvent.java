@@ -91,25 +91,22 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         motorLeftBack   = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
         motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
 
-        /*
         motorIntake     = hardwareMap.get(DcMotorEx.class, "motorIntake");
         motorLauncherLeft = hardwareMap.get(DcMotorEx.class, "motorLauncherLeft"); // Mapped as DcMotorEx to read encoder
         motorLauncherRight   = hardwareMap.get(DcMotorEx.class, "motorLauncherRight");
         motorLift = hardwareMap.get(DcMotorEx.class, "motorLift");
         servoHold = hardwareMap.get(Servo.class, "servoHold");
-         */
 
         // --- MOTOR DIRECTION ---
         motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
         motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
         motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
         motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
-        /*
+
         motorLauncherRight.setDirection(DcMotorEx.Direction.REVERSE);
         motorLauncherLeft.setDirection(DcMotorEx.Direction.FORWARD);
         motorIntake.setDirection(DcMotorEx.Direction.FORWARD);
         motorLift.setDirection(DcMotorEx.Direction.FORWARD);
-         */
 
         // --- MOTOR BEHAVIOR ---
         // Drivetrain and Climber set to BRAKE
@@ -117,7 +114,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         motorRightFront.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         motorLeftBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         motorRightBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-        /*
+
         motorLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
         // Intake and Shooters set to FLOAT (Coast)
@@ -128,20 +125,18 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         // --- ENCODER SETUP FOR SHOOTER ---
         motorLauncherLeft.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
         motorLauncherLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-         */
+
         // Set other motors to run without encoders
         motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        /*
+
         motorIntake.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorLauncherRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorLift.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
 
         servoHold.setPosition(0.5);
-
-         */
 
         telemetry.addData("Status", "Initialized. Ready to run!");
         telemetry.update();
@@ -168,7 +163,6 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             motorRightFront.setPower(frontRightPower);
             motorRightBack.setPower(backRightPower);
 
-            /*
             //----------------------------//
             // INTAKE AND SHOOTING LOGIC  //
             //----------------------------//
@@ -223,7 +217,7 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             } else {
                 motorLift.setPower(0);
             }
-            */
+
             //----------------//
             //   TELEMETRY    //
             //----------------//
@@ -231,11 +225,11 @@ public class TeleOpPreviewEvent extends LinearOpMode {
             telemetry.addData("--- Launcher ---", "");
             telemetry.addData("Flywheel Status", flywheelOn ? "ON" : "OFF");
             telemetry.addData("Target Velocity", BANG_BANG_TARGET_VELOCITY);
-            /*
+
             telemetry.addData("Actual Velocity", "%.2f", motorLauncherLeft.getVelocity());
             telemetry.addData("Launcher Power", "%.2f", motorLauncherLeft.getPower());
             // BATTERY VOLTAGE
-             */
+
             telemetry.update();
         }
     }
