@@ -26,28 +26,35 @@ package org.firstinspires.ftc.teamcode.Match.Auto;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 
-import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 @Autonomous(name="Meet 1 Auto", group="Match", preselectTeleOp="TeleOpPreviewEvent")
 
 public class AutoMeet1 extends LinearOpMode {
     private static final String TAG = AutoMeet1.class.getSimpleName();
-
+    private static final Logger log = LoggerFactory.getLogger(AutoMeet1.class);
+    // --- Logging Declaration ---
+    private Datalog datalog;
+    private double targetHeading = 0.0; // Current target heading for the robot
+    private String opModeStatus = "INIT";
     // Enumerations for Alliance and Position
     enum Alliance {
         RED,
@@ -79,12 +86,14 @@ public class AutoMeet1 extends LinearOpMode {
     private IMU imu = null; // Assuming IMU is used for heading
     private TouchSensor touchSensor = null;
     private VoltageSensor batterySensor;
+    /*
     static final double TICKS_PER_MOTOR_REV = 28.0; // SWYFT v2 drive
     static final double WHEEL_DIAMETER_INCHES = 3.3856; // 86 mm
     static final double DRIVE_GEAR_REDUCTION = 12.7;
     static final double TICKS_PER_INCH =
             (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_INCHES * Math.PI);
-    // private static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
+     */
+    private static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
 
     static final double DRIVE_SPEED = 0.5;
     static final double HEADING_GAIN = 0.03; // P-gain for straightness
@@ -127,9 +136,29 @@ public class AutoMeet1 extends LinearOpMode {
     @Override
     public void runOpMode() {
         // --- Hardware Initialization ---
+        opModeStatus = currentState.toString();
+        // 1. Initialize the Datalogger with a filename and headers
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss");
+        // 2. Get the current system date and time.
+        String timestamp = dateFormat.format(new Date());
+        // 3. Define the base filename and append the timestamp
+        String datalogFilename = TAG + "_" + timestamp;
+        datalog = new Datalog(datalogFilename);
+        // ---------------------------------------------------------------------------------
+        // FIX: Robust Battery Sensor Initialization
+        // The original code: batterySensor = hardwareMap.voltageSensor.iterator().next();
+        // can throw a NoSuchElementException if the collection is empty.
+        // We ensure the collection is not empty before accessing the sensor.
+        if (hardwareMap.voltageSensor.iterator().hasNext()) {
+            batterySensor = hardwareMap.voltageSensor.iterator().next();
+        } else {
+            // Set to null and log a warning if no sensor is found, preventing NullPointerException later.
+            batterySensor = null;
+            telemetry.addData("WARNING", "No VoltageSensor found in hardwareMap!");
+            telemetry.update();
+        }
         // Assuming your IMU is named "imu" in the configuration
         imu = hardwareMap.get(IMU.class, "imu");
-
         // --- B. Define Hub Orientation on Robot ---
         // 1. Create the orientation object using the specified directions
         RevHubOrientationOnRobot orientationOnRobot = new RevHubOrientationOnRobot(
@@ -160,12 +189,9 @@ public class AutoMeet1 extends LinearOpMode {
         motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
 
+        initAprilTag();
+
         // --- Driver Hub Pre-Match Selection ---
-
-        telemetry.addData("Status", "Ready for Selection");
-        telemetry.update();
-        sleep(3000);
-
         while (!isStarted() && !isStopRequested()) {
             // Alliance Selection
             if (gamepad1.b) {
@@ -256,15 +282,15 @@ public class AutoMeet1 extends LinearOpMode {
 
         // Main FSM loop. The opModeIsActive() check allows the driver to stop the OpMode at any time.
         while (opModeIsActive() && currentState != RobotState.COMPLETE) {
-
-            telemetry.addData("Current State", currentState.toString());
+            opModeStatus = currentState.toString();
+            telemetry.addData("Current State", opModeStatus);
             telemetry.update();
 
             switch (currentState) {
                 case SCAN_OBELISK:
                     // Placeholder: Code to move to a position to scan the obelisk
                     // and use computer vision to determine its location.
-                    sleep(2000); // Wait for vision processing
+                    // sleep(2000); // Wait for vision processing
 
                     // After scanning, transition to the next state
                     currentState = RobotState.SCAN_GOAL;
@@ -273,14 +299,14 @@ public class AutoMeet1 extends LinearOpMode {
                 case SCAN_GOAL:
                     // Placeholder: Code to move to the determined goal position
                     // and verify its location before launch.
-                    //sleep(1500); // Wait for position verification
+                    // sleep(1500); // Wait for position verification
 
                     // After scanning the goal, transition to launch
                     currentState = RobotState.LAUNCH;
                     break;
 
                 case LAUNCH:
-                    //launch(1.0); // launch power = 1.0
+                    // launch(1.0); // launch power = 1.0
 
                     // After the launch action is initiated, wait for it to finish
                     currentState = RobotState.TRAVEL;
@@ -294,7 +320,7 @@ public class AutoMeet1 extends LinearOpMode {
                         currentState = RobotState.ROTATING;
                     }
                      */
-                    currentState = RobotState.COMPLETE;
+                    currentState = RobotState.LEAVE;
                     break;
 
                 case LEAVE:
@@ -302,9 +328,9 @@ public class AutoMeet1 extends LinearOpMode {
                     if (position == Position.POS2) {
                         leaveDistance = - 24.0;
                     }
-                    // driveMecanum(0.5, leaveDistance, 0.0);
-                    driveVectorMecanum(0.5, 0.0, leaveDistance, 0.0);
-                    // strafeMecanum(0.5, leaveDistance, 0.0);
+                    // driveMecanum(DRIVE_SPEED, leaveDistance, 0.0);
+                    driveVectorMecanum(DRIVE_SPEED, 0.0, leaveDistance, 0.0);
+                    // strafeMecanum(DRIVE_SPEED, leaveDistance, 0.0);
 
                     currentState = RobotState.COMPLETE;
                     break;
@@ -315,7 +341,17 @@ public class AutoMeet1 extends LinearOpMode {
                 default:
                     throw new IllegalStateException("FSM: unexpected value: " + currentState);
             }
+            opModeStatus = currentState.toString();
+            telemetry.addData("Auto", opModeStatus);
+            telemetry.update();
         }
+
+        // 5. Stop and Reset
+        stopAllMotors();
+        logData(); // Log final status
+
+        // 3. CRITICAL: Close the datalogger to flush the buffer and save the file
+        datalog.close();
     }
 
     /**
@@ -382,21 +418,26 @@ public class AutoMeet1 extends LinearOpMode {
             motorLeftBack.setPower(leftPower);
             motorRightFront.setPower(rightPower);
             motorRightBack.setPower(rightPower);
+            logData();
         }
 
-        // 5. Stop and Reset
+
+    }
+
+    /**
+     * Helper function to stop and reset motor modes.
+     */
+    private void stopAllMotors() {
         motorLeftFront.setPower(0);
         motorRightFront.setPower(0);
         motorLeftBack.setPower(0);
         motorRightBack.setPower(0);
-
         // Switch back to RUN_USING_ENCODER for TeleOp or next movement
         motorLeftFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
     }
-
     /**
      * Initializes the AprilTag processor and Vision Portal.
      */
@@ -409,7 +450,6 @@ public class AutoMeet1 extends LinearOpMode {
                 .addProcessor(aprilTag)
                 .build();
     }
-
 
     /**
      * Helper method to start the launching mechanism.
@@ -523,10 +563,11 @@ public class AutoMeet1 extends LinearOpMode {
             motorRightFront.setPower(rightFrontPower);
             motorLeftBack.setPower(leftBackPower);
             motorRightBack.setPower(rightBackPower);
+            logData();
         }
 
         // 5. Stop and Reset
-        stopAndResetMotors(); // Use a helper function for cleanup
+        stopAllMotors(); // Use a helper function for cleanup
     }
 
     /**
@@ -538,21 +579,7 @@ public class AutoMeet1 extends LinearOpMode {
         return angle;
     }
 
-    /**
-     * Helper function to stop and reset motor modes.
-     */
-    private void stopAndResetMotors() {
-        motorLeftFront.setPower(0);
-        motorRightFront.setPower(0);
-        motorLeftBack.setPower(0);
-        motorRightBack.setPower(0);
 
-        // Switch back to RUN_USING_ENCODER for TeleOp or next movement
-        motorLeftFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-    }
     /**
      * Drives the robot a specified distance at a constant heading for ANY angle.
      * This function combines forward/backward, strafe, and diagonal movement.
@@ -633,10 +660,119 @@ public class AutoMeet1 extends LinearOpMode {
             motorRightFront.setPower(rightFrontPower);
             motorLeftBack.setPower(leftBackPower);
             motorRightBack.setPower(rightBackPower);
+            logData();
         }
 
         // 5. Stop and Reset
         // Use the stopAndResetMotors() helper from the previous response
-        stopAndResetMotors();
+        stopAllMotors();
+    }
+
+    private double getHeading() {
+        YawPitchRollAngles orientation = imu.getRobotYawPitchRollAngles();
+        return orientation.getYaw(AngleUnit.DEGREES);
+    }
+
+    // Placeholder methods for drive functionality
+    private void driveStraight(double power, int runTimeMs) {
+        // Logic to drive straight using power and encoder or time
+    }
+
+    private void turnToHeading(double power, double heading) {
+        // Logic to turn the robot to a specific heading
+    }
+
+
+    // =========================================================================================
+    // Logging Method
+    // =========================================================================================
+
+    /**
+     * Collects and writes a single line of data to the CSV file.
+     */
+    private void logData() {
+        double time = getRuntime();
+        double currentHeading = getHeading();
+
+        // Write the data row. The order MUST match the HEADERS in the Datalog class.
+        datalog.log(
+                time,
+                opModeStatus,
+                currentHeading,
+                motorLeftFront.getCurrentPosition(),
+                motorRightFront.getCurrentPosition(),
+                motorLeftBack.getCurrentPosition(),
+                motorRightBack.getCurrentPosition(),
+                targetHeading,
+                batterySensor.getVoltage(),
+                HEADING_GAIN,
+                DRIVE_SPEED
+        );
+
+        // Update telemetry for on-screen monitoring
+        telemetry.addData("LOG: Status/Time", "%s / %.2f", opModeStatus, time);
+        telemetry.addData("LOG: Heading/Target", "%.1f / %.1f", currentHeading, targetHeading);
+    }
+
+    // =========================================================================================
+    // DATALOG Class Definition (Wraps the Datalogger.java utility)
+    // =========================================================================================
+    /**
+     * This wrapper class defines the fields for the log file and manages the Datalogger instance.
+     */
+    public static class Datalog implements AutoCloseable {
+        private final Datalogger datalogger;
+
+        // CRITICAL: Define your column headers in the exact order you will log the data.
+        private static final String[] HEADERS = new String[]{
+                "Time(s)",
+                "OpModeStatus",
+                "Heading",
+                "LFPos", "RFPos", "LBPos", "RBPos",
+                "TargetHeading",
+                "BatteryVoltage",
+                "Kp",
+                "Speed"
+        };
+        /**
+         * @param name filename for output log (e.g., "AutoMeet1_Log").
+         */
+        public Datalog(String name) {
+            this.datalogger = new Datalogger(name, HEADERS);
+        }
+
+        /**
+         * Logs a single line of data.
+         * The order of arguments MUST match the order of HEADERS.
+         */
+        public void log(
+                double time,
+                String opModeStatus,
+                double currentHeading,
+                int lfPos, int rfPos, int lbPos, int rbPos,
+                double targetHeading,
+                double voltage, double headingGain, double driveSpeed) {
+
+            // Manually construct the string array for the Datalogger.log() method, applying formatting.
+            datalogger.log(
+                    String.format("%.3f", time),
+                    opModeStatus,
+                    String.format("%.1f", currentHeading),
+                    String.valueOf(lfPos),
+                    String.valueOf(rfPos),
+                    String.valueOf(lbPos),
+                    String.valueOf(rbPos),
+                    String.format("%.1f", targetHeading),
+                    String.format("%.2f", voltage),
+                    String.format("%.3f", HEADING_GAIN),
+                    String.format("%.2f", DRIVE_SPEED)
+            );
+        }       /**
+         * Closes the datalogger. This is the fix for empty files!
+         */
+        @Override
+        public void close() {
+            datalogger.close();
+        }
     }
 }

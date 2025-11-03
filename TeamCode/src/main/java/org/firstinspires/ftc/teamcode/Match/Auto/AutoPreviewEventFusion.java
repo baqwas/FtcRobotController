@@ -494,7 +494,6 @@ public class AutoPreviewEventFusion extends LinearOpMode {
     }
 
     // --- VISION & LOW-LEVEL MOVEMENT HELPER METHODS ---
-
     private void initAprilTag() {
         try {
             // Build the AprilTag Processor
