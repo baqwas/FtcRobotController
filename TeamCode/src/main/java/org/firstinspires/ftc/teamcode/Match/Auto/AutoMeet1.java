@@ -249,7 +249,7 @@ public class AutoMeet1 extends LinearOpMode {
     // --- Main Autonomous Routine with FSM ---
     private void runAutonomousRoutine(Waypoint startPoint) {
 
-        double leaveDistance = 12.0;
+        double leaveDistance = 24.0;
 
         telemetry.addData("Executing Path", "Starting from (%.1f, %.1f) with heading %.1f", startPoint.x, startPoint.y, startPoint.heading);
         telemetry.update();
@@ -300,7 +300,7 @@ public class AutoMeet1 extends LinearOpMode {
                 case LEAVE:
                     // speed = 0.5, distance = 12.0, heading = 0.0 -- for test purposes only
                     if (position == Position.POS2) {
-                        leaveDistance = - 12.0;
+                        leaveDistance = - 24.0;
                     }
                     // driveMecanum(0.5, leaveDistance, 0.0);
                     driveVectorMecanum(0.5, 0.0, leaveDistance, 0.0);
