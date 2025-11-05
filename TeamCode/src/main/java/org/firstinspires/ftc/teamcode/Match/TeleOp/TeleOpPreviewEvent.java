@@ -31,8 +31,7 @@ import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.hardware.ControlSystem;
 import com.qualcomm.robotcore.hardware.VoltageSensor; // Use ControlHub for easy access since SDK 8.0+
-
-
+import com.qualcomm.robotcore.hardware.ColorSensor; // The goBILDA RGB Sensor is typically mapped as a ColorSensor.
 
 // IMU specific imports
 
@@ -66,6 +65,9 @@ public class TeleOpPreviewEvent extends LinearOpMode {
 
     // Servos
     private Servo servoHold = null;
+    private ColorSensor sensorColor1 = null;
+    private final double ENDGAME_START_TIME = 100.0; // 120 seconds (Total TeleOp) - 20 seconds = 100 seconds
+    private final double BLINK_RATE = 0.5; // Toggle the LED every 0.5 seconds (0.5s ON, 0.5s OFF)
 
     // --- State Variables for Toggles ---
     boolean flywheelOn = false;
@@ -85,66 +87,36 @@ public class TeleOpPreviewEvent extends LinearOpMode {
         telemetry.addData("Status", "Initializing...");
         telemetry.update();
 
-        // --- HARDWARE MAPPING ---
-        motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
-        motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
-        motorLeftBack   = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
-        motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
-
-        motorIntake     = hardwareMap.get(DcMotorEx.class, "motorIntake");
-        motorLauncherLeft = hardwareMap.get(DcMotorEx.class, "motorLauncherLeft"); // Mapped as DcMotorEx to read encoder
-        motorLauncherRight   = hardwareMap.get(DcMotorEx.class, "motorLauncherRight");
-        motorLift = hardwareMap.get(DcMotorEx.class, "motorLift");
-        servoHold = hardwareMap.get(Servo.class, "servoHold");
-
-        // --- MOTOR DIRECTION ---
-        motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
-        motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
-        motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
-        motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
-
-        motorLauncherRight.setDirection(DcMotorEx.Direction.REVERSE);
-        motorLauncherLeft.setDirection(DcMotorEx.Direction.FORWARD);
-        motorIntake.setDirection(DcMotorEx.Direction.FORWARD);
-        motorLift.setDirection(DcMotorEx.Direction.FORWARD);
-
-        // --- MOTOR BEHAVIOR ---
-        // Drivetrain and Climber set to BRAKE
-        motorLeftFront.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-        motorRightFront.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-        motorLeftBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-        motorRightBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-
-        motorLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-
-        // Intake and Shooters set to FLOAT (Coast)
-        motorIntake.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
-        motorLauncherLeft.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
-        motorLauncherRight.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
-
-        // --- ENCODER SETUP FOR SHOOTER ---
-        motorLauncherLeft.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-        motorLauncherLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-
-        // Set other motors to run without encoders
-        motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-
-        motorIntake.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorLauncherRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        motorLift.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-
-        servoHold.setPosition(0.5);
-
-        telemetry.addData("Status", "Initialized. Ready to run!");
-        telemetry.update();
+        initHardware();
 
         waitForStart();
         runtime.reset();
 
         while (opModeIsActive()) {
+            double currentTime = getRuntime();
+            // --- Endgame Check ---
+            if (currentTime >= ENDGAME_START_TIME) {
+                // 1. **Blinking Calculation using Modulo Operator (%)**
+                // The expression `currentTime / BLINK_RATE` gives the number of full half-second intervals elapsed.
+                // The modulo operator (%) returns the remainder.
+                // When (currentTime / BLINK_RATE) % 2 == 0, it means an even number of half-second intervals have passed (0.0s, 1.0s, 2.0s, etc.)
+                // When it equals 1, an odd number has passed (0.5s, 1.5s, 2.5s, etc.)
+                // We cast to an integer to ignore the decimal portion, giving us a clean toggle.
+                boolean blinkOn = ( (int) (currentTime / BLINK_RATE) % 2 == 0 );
+                // 2. **Apply the Blink State and Color**
+                if (blinkOn) {
+                    //sensorColor1.enableLed(true); // The goBILDA Color Sensor LED defaults to RED when enabled
+                    telemetry.addData("Endgame LED", "ON (RED)");
+                } else {
+                    ///sensorColor1.enableLed(false); // LED OFF
+                    telemetry.addData("Endgame LED", "OFF");
+                }
+            } else {
+                // Normal TeleOp operation: LED is off
+                // sensorColor1.enableLed(false);
+                telemetry.addData("Time", "%.2f / 120.0", currentTime);
+                telemetry.addData("Endgame LED", "OFF (Not Endgame Yet)");
+            }
             //----------------//
             // MECANUM DRIVE  //
             //----------------//
@@ -232,5 +204,70 @@ public class TeleOpPreviewEvent extends LinearOpMode {
 
             telemetry.update();
         }
+        //----------------//
+        //   STOP         //
+        //----------------//
+        // sensorColor1.enableLed(false);
+    }
+    public void initHardware() {
+
+        // --- HARDWARE MAPPING ---
+        // sensorColor1 = hardwareMap.get(ColorSensor.class, "color_sensor_name"); // Map the sensor from the Configuration File
+        // sensorColor1.enableLed(false); // Ensure the LED is off initially
+
+        motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
+        motorRightFront = hardwareMap.get(DcMotorEx.class, "motorRightFront");
+        motorLeftBack   = hardwareMap.get(DcMotorEx.class, "motorLeftBack");
+        motorRightBack = hardwareMap.get(DcMotorEx.class, "motorRightBack");
+
+        motorIntake     = hardwareMap.get(DcMotorEx.class, "motorIntake");
+        motorLauncherLeft = hardwareMap.get(DcMotorEx.class, "motorLauncherLeft"); // Mapped as DcMotorEx to read encoder
+        motorLauncherRight   = hardwareMap.get(DcMotorEx.class, "motorLauncherRight");
+        motorLift = hardwareMap.get(DcMotorEx.class, "motorLift");
+        servoHold = hardwareMap.get(Servo.class, "servoHold");
+
+        // --- MOTOR DIRECTION ---
+        motorLeftFront.setDirection(DcMotorEx.Direction.REVERSE);
+        motorLeftBack.setDirection(DcMotorEx.Direction.REVERSE);
+        motorRightFront.setDirection(DcMotorEx.Direction.FORWARD);
+        motorRightBack.setDirection(DcMotorEx.Direction.FORWARD);
+
+        motorLauncherRight.setDirection(DcMotorEx.Direction.REVERSE);
+        motorLauncherLeft.setDirection(DcMotorEx.Direction.FORWARD);
+        motorIntake.setDirection(DcMotorEx.Direction.FORWARD);
+        motorLift.setDirection(DcMotorEx.Direction.FORWARD);
+
+        // --- MOTOR BEHAVIOR ---
+        // Drivetrain and Climber set to BRAKE
+        motorLeftFront.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        motorRightFront.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        motorLeftBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        motorRightBack.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+
+        motorLift.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+
+        // Intake and Shooters set to FLOAT (Coast)
+        motorIntake.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
+        motorLauncherLeft.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
+        motorLauncherRight.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
+
+        // --- ENCODER SETUP FOR SHOOTER ---
+        motorLauncherLeft.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
+        motorLauncherLeft.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+
+        // Set other motors to run without encoders
+        motorLeftFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        motorRightFront.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        motorLeftBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        motorRightBack.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+
+        motorIntake.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        motorLauncherRight.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        motorLift.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+
+        servoHold.setPosition(0.5);
+
+        telemetry.addData("Status", "Initialized. Ready to run!");
+        telemetry.update();
     }
 }
