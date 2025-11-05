@@ -32,6 +32,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
+import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -40,19 +41,20 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-@Autonomous(name="Meet 1 Auto", group="Match", preselectTeleOp="TeleOpPreviewEvent")
+@Autonomous(name="Meet 1 Auto", group="Match", preselectTeleOp="Preview Event TeleOp")
 
 public class AutoMeet1 extends LinearOpMode {
     private static final String TAG = AutoMeet1.class.getSimpleName();
     private static final Logger log = LoggerFactory.getLogger(AutoMeet1.class);
     // --- Logging Declaration ---
-    private Datalog datalog;
+    private Datalog datalog = null;
     private double targetHeading = 0.0; // Current target heading for the robot
     private String opModeStatus = "INIT";
     // Enumerations for Alliance and Position
@@ -86,17 +88,27 @@ public class AutoMeet1 extends LinearOpMode {
     private IMU imu = null; // Assuming IMU is used for heading
     private TouchSensor touchSensor = null;
     private VoltageSensor batterySensor;
-    /*
     static final double TICKS_PER_MOTOR_REV = 28.0; // SWYFT v2 drive
     static final double WHEEL_DIAMETER_INCHES = 3.3856; // 86 mm
     static final double DRIVE_GEAR_REDUCTION = 12.7;
     static final double TICKS_PER_INCH =
             (TICKS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_INCHES * Math.PI);
-     */
-    private static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
+    // private static final double TICKS_PER_INCH = 33.4308289114498; // SWYFT Drive v2; goBILDA 5203 series, 12.7:1, 86 mm
+    // --- PI CONTROL CONSTANTS (Suggested initial values) ---
 
+
+    // --- PI CONTROL STATE VARIABLES ---
+    private double integralSum = 0.0;
+    private double lastTime = 0.0; // Used to calculate Delta Time (dt)
     static final double DRIVE_SPEED = 0.5;
-    static final double HEADING_GAIN = 0.03; // P-gain for straightness
+    private static final double HEADING_GAIN = 0.03;      // Kp for translation
+    private static final double INTEGRAL_GAIN = 0.005;    // Ki for translation
+    private static final double MAX_INTEGRAL_SUM = 0.3;   // Anti-windup limit
+    // --- ROTATION PI CONTROL CONSTANTS ---
+    private static final double TURN_GAIN = 0.02;         // Kp for rotation
+    private static final double TURN_INTEGRAL_GAIN = 0.002; // Ki for rotation
+    private static final double HEADING_TOLERANCE = 1.0;  // Stop tolerance in degrees for turning
+
     // Variables for Alliance and Position
     private Alliance alliance = Alliance.RED; // Default to Red Alliance
     private Position position = Position.POS1; // Default to Position 1
@@ -583,14 +595,16 @@ public class AutoMeet1 extends LinearOpMode {
     /**
      * Drives the robot a specified distance at a constant heading for ANY angle.
      * This function combines forward/backward, strafe, and diagonal movement.
-     *
-     * @param speed The maximum speed (e.g., 0.5).
-     * @param angle The robot-centric angle of travel (0=Forward, 90=Left, 180=Backward, -90/270=Right).
-     * @param distanceInches The distance to travel (always positive).
-     * @param desiredHeading The field-centric heading (yaw) to maintain during travel.
+     *                            * @param speed The base magnitude of the drive power.
+     *      * @param angle The direction of movement in degrees (0 = forward, 90 = strafe right).
+     *      * @param distanceInches The total distance in inches to travel.
+     *      * @param desiredHeading The target IMU heading (e.g., 0.0 to drive straight).
      */
     public void driveVectorMecanum(double speed, double angle, double distanceInches, double desiredHeading) {
         if (!opModeIsActive()) return;
+
+        double startTime = getRuntime();
+        integralSum = 0.0; // Reset integral sum for a new movement command
 
         // Convert angle to radians for trig functions
         double angleRad = Math.toRadians(angle);
@@ -625,6 +639,12 @@ public class AutoMeet1 extends LinearOpMode {
                 (motorLeftFront.isBusy() || motorRightFront.isBusy() ||
                         motorLeftBack.isBusy() || motorRightBack.isBusy())) {
 
+            // --- TIME & DELTA TIME CALCULATION (ESSENTIAL for I-Control) ---
+            // Calculate the time step since the last loop iteration
+            double currentTime = getRuntime();
+            double deltaTime = currentTime - lastTime;
+            lastTime = currentTime; // Update lastTime for the next iteration
+
             // --- Calculate Power Vector ---
             double drivePower  = Math.cos(angleRad); // Forward/Backward component of the vector
             double strafePower = Math.sin(angleRad); // Strafe component of the vector
@@ -632,7 +652,11 @@ public class AutoMeet1 extends LinearOpMode {
             // --- Calculate Heading Correction (Same as before) ---
             double currentHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
             double error = normalizeAngle(desiredHeading - currentHeading);
-            double turnCorrection = error * HEADING_GAIN;
+            double proportionalCorrection = error * HEADING_GAIN; // P-term, proportional correction
+            // Accumulate the error scaled by time (dt)
+            integralSum += (error * deltaTime); // I-Term (Integral Correction)
+            double integralCorrection = integralSum * INTEGRAL_GAIN; // Total I-Correction
+            double turnCorrection = proportionalCorrection + integralCorrection; // Final Turn Correction (P + I)
 
             // --- Apply Power Mix ---
             double leftFrontPower  = drivePower + strafePower + turnCorrection;
@@ -678,10 +702,70 @@ public class AutoMeet1 extends LinearOpMode {
         // Logic to drive straight using power and encoder or time
     }
 
-    private void turnToHeading(double power, double heading) {
-        // Logic to turn the robot to a specific heading
-    }
+    private void turnToHeading(double power, double desiredHeading) {
+        if (!opModeIsActive()) return;
 
+        // Reset PI state for the new turn
+        integralSum = 0.0;
+        lastTime = getRuntime();
+
+        // 1. Ensure motors are in RUN_USING_ENCODER mode for direct power control
+        // This is necessary because RUN_TO_POSITION mode would interfere with the PI turn control.
+        motorLeftFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        // Loop until the robot is close enough to the target heading
+        while (opModeIsActive()) {
+
+            // --- TIME & DELTA TIME CALCULATION ---
+            double currentTime = getRuntime();
+            double deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            // --- Calculate Heading Correction (PI Control - uses TURN_GAIN/TURN_INTEGRAL_GAIN) ---
+            double currentHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+            double error = normalizeAngle(desiredHeading - currentHeading);
+
+            // Check for loop termination: If error is within tolerance, break
+            if (Math.abs(error) <= HEADING_TOLERANCE) {
+                break;
+            }
+
+            // P-Term (Proportional Correction)
+            double proportionalCorrection = error * TURN_GAIN;
+
+            // I-Term (Integral Correction)
+            // Accumulate the error scaled by time (dt)
+            integralSum += (error * deltaTime);
+            // Anti-Windup: Limit the integral sum to prevent massive overshoot
+            integralSum = Range.clip(integralSum, -MAX_INTEGRAL_SUM, MAX_INTEGRAL_SUM);
+
+            // Total I-Correction
+            double integralCorrection = integralSum * TURN_INTEGRAL_GAIN;
+
+            // Final Turn Power (P + I)
+            double turnCorrection = proportionalCorrection + integralCorrection;
+
+            // Limit the turn correction power to the maximum allowed speed
+            double turnPower = Range.clip(turnCorrection, -power, power);
+
+            // --- Apply Power ---
+            // For turning in place, the left motors are set to the turn power, and the right motors
+            // are set to the negative of the turn power.
+            motorLeftFront.setPower(turnPower);
+            motorRightFront.setPower(-turnPower);
+            motorLeftBack.setPower(turnPower);
+            motorRightBack.setPower(-turnPower);
+
+            logData(); // Log data inside the control loop
+            telemetry.addData("PI-Turn: P/I/Sum", "%.4f / %.4f / %.4f", proportionalCorrection, integralCorrection, integralSum);
+            telemetry.addData("PI-Turn: Target/Actual/Error", "%.1f / %.1f / %.1f", desiredHeading, currentHeading, error);
+            telemetry.update();
+        }
+        stopAllMotors(); // Stop motors after loop exit
+    }
 
     // =========================================================================================
     // Logging Method
@@ -734,10 +818,13 @@ public class AutoMeet1 extends LinearOpMode {
                 "Kp",
                 "Speed"
         };
+
         /**
-         * @param name filename for output log (e.g., "AutoMeet1_Log").
+         * @param name filename for output log
          */
-        public Datalog(String name) {
+        public Datalog(String name)
+        {
+            // The Datalogger constructor handles file creation and header writing.
             this.datalogger = new Datalogger(name, HEADERS);
         }
 
@@ -767,7 +854,8 @@ public class AutoMeet1 extends LinearOpMode {
                     String.format("%.3f", HEADING_GAIN),
                     String.format("%.2f", DRIVE_SPEED)
             );
-        }       /**
+        }
+        /**
          * Closes the datalogger. This is the fix for empty files!
          */
         @Override
