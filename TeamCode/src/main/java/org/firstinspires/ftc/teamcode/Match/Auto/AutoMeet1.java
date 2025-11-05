@@ -433,7 +433,6 @@ public class AutoMeet1 extends LinearOpMode {
             logData();
         }
 
-
     }
 
     /**
@@ -790,6 +789,7 @@ public class AutoMeet1 extends LinearOpMode {
                 targetHeading,
                 batterySensor.getVoltage(),
                 HEADING_GAIN,
+                INTEGRAL_GAIN,
                 DRIVE_SPEED
         );
 
@@ -816,6 +816,7 @@ public class AutoMeet1 extends LinearOpMode {
                 "TargetHeading",
                 "BatteryVoltage",
                 "Kp",
+                "Ki",
                 "Speed"
         };
 
@@ -838,7 +839,7 @@ public class AutoMeet1 extends LinearOpMode {
                 double currentHeading,
                 int lfPos, int rfPos, int lbPos, int rbPos,
                 double targetHeading,
-                double voltage, double headingGain, double driveSpeed) {
+                double voltage, double headingGain, double turnGain, double driveSpeed) {
 
             // Manually construct the string array for the Datalogger.log() method, applying formatting.
             datalogger.log(
@@ -852,6 +853,7 @@ public class AutoMeet1 extends LinearOpMode {
                     String.format("%.1f", targetHeading),
                     String.format("%.2f", voltage),
                     String.format("%.3f", HEADING_GAIN),
+                    String.format("%.3f", INTEGRAL_GAIN),
                     String.format("%.2f", DRIVE_SPEED)
             );
         }
