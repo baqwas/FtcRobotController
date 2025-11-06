@@ -101,11 +101,12 @@ public class AutoMeet1 extends LinearOpMode {
     private double integralSum = 0.0;
     private double lastTime = 0.0; // Used to calculate Delta Time (dt)
     static final double DRIVE_SPEED = 0.5;
-    private static final double HEADING_GAIN = 0.03;      // Kp for translation
-    private static final double INTEGRAL_GAIN = 0.005;    // Ki for translation
-    private static final double MAX_INTEGRAL_SUM = 0.3;   // Anti-windup limit
+    static final double TURN_SPEED = 0.3;
+    private static final double HEADING_GAIN = 0.001;      // Kp for translation
+    private static final double INTEGRAL_GAIN = 0.001;    // Ki for translation
+    private static final double MAX_INTEGRAL_SUM = 0.2;   // Anti-windup limit
     // --- ROTATION PI CONTROL CONSTANTS ---
-    private static final double TURN_GAIN = 0.02;         // Kp for rotation
+    private static final double TURN_GAIN = 0.01;         // Kp for rotation
     private static final double TURN_INTEGRAL_GAIN = 0.002; // Ki for rotation
     private static final double HEADING_TOLERANCE = 1.0;  // Stop tolerance in degrees for turning
 
@@ -341,9 +342,11 @@ public class AutoMeet1 extends LinearOpMode {
                         leaveDistance = - 24.0;
                     }
                     // driveMecanum(DRIVE_SPEED, leaveDistance, 0.0);
-                    driveVectorMecanum(DRIVE_SPEED, 0.0, leaveDistance, 0.0);
-                    // strafeMecanum(DRIVE_SPEED, leaveDistance, 0.0);
-
+                    // driveVectorMecanum(DRIVE_SPEED, 0.0, leaveDistance, 0.0);
+                    // turnToHeading(TURN_SPEED, 45.0);
+                    // sleep(2000);
+                    // turnToHeading(TURN_SPEED, -45.0);
+                    strafeMecanum(DRIVE_SPEED, leaveDistance, 0.0);
                     currentState = RobotState.COMPLETE;
                     break;
 
@@ -714,6 +717,7 @@ public class AutoMeet1 extends LinearOpMode {
         motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        logData();
 
         // Loop until the robot is close enough to the target heading
         while (opModeIsActive()) {
@@ -740,16 +744,13 @@ public class AutoMeet1 extends LinearOpMode {
             integralSum += (error * deltaTime);
             // Anti-Windup: Limit the integral sum to prevent massive overshoot
             integralSum = Range.clip(integralSum, -MAX_INTEGRAL_SUM, MAX_INTEGRAL_SUM);
-
             // Total I-Correction
             double integralCorrection = integralSum * TURN_INTEGRAL_GAIN;
-
             // Final Turn Power (P + I)
-            double turnCorrection = proportionalCorrection + integralCorrection;
+            double turnCorrection = -(proportionalCorrection + integralCorrection);
 
             // Limit the turn correction power to the maximum allowed speed
             double turnPower = Range.clip(turnCorrection, -power, power);
-
             // --- Apply Power ---
             // For turning in place, the left motors are set to the turn power, and the right motors
             // are set to the negative of the turn power.
