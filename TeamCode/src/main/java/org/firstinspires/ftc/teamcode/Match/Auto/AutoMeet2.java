@@ -41,18 +41,17 @@ import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
-import org.firstinspires.ftc.teamcode.Utility.Datalogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-@Autonomous(name="Meet 1 Auto", group="Match", preselectTeleOp="Preview Event TeleOp")
+@Autonomous(name="Meet 2 Auto", group="Match", preselectTeleOp="Preview Event TeleOp")
 
-public class AutoMeet1 extends LinearOpMode {
-    private static final String TAG = AutoMeet1.class.getSimpleName();
-    private static final Logger log = LoggerFactory.getLogger(AutoMeet1.class);
+public class AutoMeet2 extends LinearOpMode {
+    private static final String TAG = AutoMeet2.class.getSimpleName();
+    private static final Logger log = LoggerFactory.getLogger(AutoMeet2.class);
     // --- Logging Declaration ---
     private Datalog datalog = null;
     private double targetHeading = 0.0; // Current target heading for the robot
@@ -137,7 +136,7 @@ public class AutoMeet1 extends LinearOpMode {
     }
 
     // Waypoint entities for each starting position.
-    // Replace these placeholder values with your actual coordinates.
+    // Replace these placeholder values with your actual coordinates
     private final Waypoint redPos1Waypoint = new Waypoint(-36.0, 60.0, 90.0);
     private final Waypoint redPos2Waypoint = new Waypoint(-12.0, 60.0, 90.0);
     private final Waypoint redPos3Waypoint = new Waypoint(12.0, 60.0, 90.0);
@@ -184,7 +183,7 @@ public class AutoMeet1 extends LinearOpMode {
         // 2. Create the IMU Parameters object and pass the orientation
         IMU.Parameters parameters = new IMU.Parameters(orientationOnRobot);
         // 3. Initialize the IMU with the parameters
-        // This process automatically calibrates and configures the sensor.
+        // This process automatically calibrates and configures the sensor
         imu.initialize(parameters);
         // --- D. Mecanum motor initialization
         motorLeftFront = hardwareMap.get(DcMotorEx.class, "motorLeftFront");
@@ -302,7 +301,7 @@ public class AutoMeet1 extends LinearOpMode {
             switch (currentState) {
                 case SCAN_OBELISK:
                     // Placeholder: Code to move to a position to scan the obelisk
-                    // and use computer vision to determine its location.
+                    // and use computer vision to determine its location
                     // sleep(2000); // Wait for vision processing
 
                     // After scanning, transition to the next state
@@ -326,13 +325,6 @@ public class AutoMeet1 extends LinearOpMode {
                     break;
 
                 case TRAVEL:
-                    /*
-                    if(drive(DRIVE_SPEED, -4, DistanceUnit.INCH, 1)){
-                        leftDrive.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-                        rightDrive.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-                        currentState = RobotState.ROTATING;
-                    }
-                     */
                     currentState = RobotState.LEAVE;
                     break;
 
@@ -435,7 +427,6 @@ public class AutoMeet1 extends LinearOpMode {
             motorRightBack.setPower(rightPower);
             logData();
         }
-
     }
 
     /**
@@ -452,6 +443,7 @@ public class AutoMeet1 extends LinearOpMode {
         motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorRightBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
     }
+
     /**
      * Initializes the AprilTag processor and Vision Portal.
      */
@@ -466,8 +458,8 @@ public class AutoMeet1 extends LinearOpMode {
     }
 
     /**
-     * Helper method to start the launching mechanism.
-     * Replace the placeholder code with your actual launcher control logic.
+     * Helper method to start the launching mechanism
+     * Replace the placeholder code with your actual launcher control logic
      */
     private void launch(double power) {
         // Example: Set the launcher motor power
@@ -475,9 +467,9 @@ public class AutoMeet1 extends LinearOpMode {
     }
 
     /**
-     * Helper method to check if the launch is complete.
-     * Replace the placeholder code with your sensor or timer-based logic.
-     * @return true if the launch action is finished, false otherwise.
+     * Helper method to check if the launch is complete
+     * Replace the placeholder code with your sensor or timer-based logic
+     * @return true if the launch action is finished, false otherwise
      */
     private boolean isLaunchComplete() {
         // Example: Check if a sensor detects the game element has been launched
@@ -487,14 +479,14 @@ public class AutoMeet1 extends LinearOpMode {
     }
 // NOTE: This code assumes constants (TICKS_PER_INCH, HEADING_GAIN)
 // and hardware objects (motorLeftFront, imu, etc.) are declared
-// as class members in your OpMode.
+// as class members in your OpMode
 
     /**
      * Executes a straight strafing movement (left or right) using encoders for distance control
-     * and the IMU for maintaining a consistent heading.
-     * * @param speed The maximum motor power (e.g., 0.5 for 50%).
-     * @param distanceInches The distance to strafe. Positive for right, negative for left.
-     * @param desiredHeading The field-centric heading (yaw) to maintain during the strafe (e.g., 0.0).
+     * and the IMU for maintaining a consistent heading
+     * @param speed The maximum motor power (e.g., 0.5 for 50%)
+     * @param distanceInches The distance to strafe. Positive for right, negative for left
+     * @param desiredHeading The field-centric heading (yaw) to maintain during the strafe (e.g., 0.0)
      */
     public void strafeMecanum(double speed, double distanceInches, double desiredHeading) {
         if (!opModeIsActive()) return;
@@ -585,7 +577,7 @@ public class AutoMeet1 extends LinearOpMode {
     }
 
     /**
-     * Helper function to normalize angles to the range [-180, 180].
+     * Helper function to normalize angles to the range [-180, 180]
      */
     private double normalizeAngle(double angle) {
         while (angle > 180)  angle -= 360;
@@ -595,12 +587,12 @@ public class AutoMeet1 extends LinearOpMode {
 
 
     /**
-     * Drives the robot a specified distance at a constant heading for ANY angle.
-     * This function combines forward/backward, strafe, and diagonal movement.
-     *                            * @param speed The base magnitude of the drive power.
-     *      * @param angle The direction of movement in degrees (0 = forward, 90 = strafe right).
-     *      * @param distanceInches The total distance in inches to travel.
-     *      * @param desiredHeading The target IMU heading (e.g., 0.0 to drive straight).
+     * Drives the robot a specified distance at a constant heading for ANY angle
+     * This function combines forward/backward, strafe, and diagonal movement
+     *      * @param speed The base magnitude of the drive power
+     *      * @param angle The direction of movement in degrees (0 = forward, 90 = strafe right
+     *      * @param distanceInches The total distance in inches to travel
+     *      * @param desiredHeading The target IMU heading (e.g., 0.0 to drive straight)
      */
     public void driveVectorMecanum(double speed, double angle, double distanceInches, double desiredHeading) {
         if (!opModeIsActive()) return;
@@ -617,14 +609,14 @@ public class AutoMeet1 extends LinearOpMode {
         int moveCounts = (int) (distanceInches * TICKS_PER_INCH);
 
         // For a vector move, a simplified approach is to set the Target Position
-        // to a value that *all* motors will reach together when the distance is achieved.
-        // We'll use the average of the two front motors for the target.
+        // to a value that *all* motors will reach together when the distance is achieved
+        // We'll use the average of the two front motors for the target
         int currentAvgPos = (motorLeftFront.getCurrentPosition() + motorRightFront.getCurrentPosition()) / 2;
         int targetPos = currentAvgPos + moveCounts;
 
 
-        // Set the target position to be the same for all motors.
-        // The power adjustments inside the loop will force the robot into the correct vector path.
+        // Set the target position to be the same for all motors
+        // The power adjustments inside the loop will force the robot into the correct vector path
         motorLeftFront.setTargetPosition(targetPos);
         motorRightFront.setTargetPosition(targetPos);
         motorLeftBack.setTargetPosition(targetPos);
@@ -712,7 +704,7 @@ public class AutoMeet1 extends LinearOpMode {
         lastTime = getRuntime();
 
         // 1. Ensure motors are in RUN_USING_ENCODER mode for direct power control
-        // This is necessary because RUN_TO_POSITION mode would interfere with the PI turn control.
+        // This is necessary because RUN_TO_POSITION mode would interfere with the PI turn control
         motorLeftFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorRightFront.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motorLeftBack.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -753,7 +745,7 @@ public class AutoMeet1 extends LinearOpMode {
             double turnPower = Range.clip(turnCorrection, -power, power);
             // --- Apply Power ---
             // For turning in place, the left motors are set to the turn power, and the right motors
-            // are set to the negative of the turn power.
+            // are set to the negative of the turn power
             motorLeftFront.setPower(turnPower);
             motorRightFront.setPower(-turnPower);
             motorLeftBack.setPower(turnPower);
@@ -803,7 +795,7 @@ public class AutoMeet1 extends LinearOpMode {
     // DATALOG Class Definition (Wraps the Datalogger.java utility)
     // =========================================================================================
     /**
-     * This wrapper class defines the fields for the log file and manages the Datalogger instance.
+     * This wrapper class defines the fields for the log file and manages the Datalogger instance
      */
     public static class Datalog implements AutoCloseable {
         private final Datalogger datalogger;
@@ -826,7 +818,7 @@ public class AutoMeet1 extends LinearOpMode {
          */
         public Datalog(String name)
         {
-            // The Datalogger constructor handles file creation and header writing.
+            // The Datalogger constructor handles file creation and header writing
             this.datalogger = new Datalogger(name, HEADERS);
         }
 
@@ -842,7 +834,7 @@ public class AutoMeet1 extends LinearOpMode {
                 double targetHeading,
                 double voltage, double headingGain, double turnGain, double driveSpeed) {
 
-            // Manually construct the string array for the Datalogger.log() method, applying formatting.
+            // Manually construct the string array for the Datalogger.log() method, applying formatting
             datalogger.log(
                     String.format("%.3f", time),
                     opModeStatus,
