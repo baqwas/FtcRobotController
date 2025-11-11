@@ -28,6 +28,7 @@
 
 package org.firstinspires.ftc.teamcode.Utility;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -47,6 +48,7 @@ import java.util.List;
  * triggered by specific gamepad inputs.
  */
 @TeleOp(name = "Launcher Data Collector", group = "Utility")
+@Disabled
 public class LauncherDataCollector extends LinearOpMode {
 
     private static final String TAG = LauncherDataCollector.class.getSimpleName();

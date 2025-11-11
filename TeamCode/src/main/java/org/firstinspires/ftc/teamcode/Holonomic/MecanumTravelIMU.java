@@ -115,7 +115,7 @@ import java.util.Objects;
 
 public class MecanumTravelIMU extends LinearOpMode {
 
-    private static final String TAG = MecanumTravelIMU.class.getSimpleName();
+    private final String TAG = this.getClass().getSimpleName();
 
     // 1. REPLACED Datalog CLASS INSTANTIATION with Datalogger direct instantiation
     private final Datalogger datalogger = new Datalogger(

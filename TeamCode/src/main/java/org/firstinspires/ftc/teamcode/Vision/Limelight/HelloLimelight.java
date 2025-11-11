@@ -48,27 +48,35 @@ import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
 import java.util.List;
 
-/*
+/**
  * This OpMode illustrates how to use the Limelight3A Vision Sensor.
  *
  * @see <a href="https://limelightvision.io/">Limelight</a>
- *
  * Notes on configuration:
- *
  *   The device presents itself, when plugged into a USB port on a Control Hub as an ethernet
  *   interface.  A DHCP server running on the Limelight automatically assigns the Control Hub an
  *   ip address for the new ethernet interface.
- *
  *   Since the Limelight is plugged into a USB port, it will be listed on the top level configuration
  *   activity along with the Control Hub Portal and other USB devices such as webcams.  Typically
  *   serial numbers are displayed below the device's names.  In the case of the Limelight device, the
  *   Control Hub's assigned ip address for that ethernet interface is used as the "serial number".
- *
  *   Tapping the Limelight's name, transitions to a new screen where the user can rename the Limelight
  *   and specify the Limelight's ip address.  Users should take care not to confuse the ip address of
  *   the Limelight itself, which can be configured through the Limelight settings page via a web browser,
  *   and the ip address the Limelight device assigned the Control Hub and which is displayed in small text
  *   below the name of the Limelight on the top level configuration screen.
+ *   Variable,  Limelight NetworkTable Key, Physical Meaning (for a stationary tag),    Use in Calculations
+ *   tx         tx                          Bearing: Horizontal angle (in degrees)      Directional Control: Use
+ *                                                  from the center of the camera view      for turning the robot
+ *                                                  to the center of the target.            to center the tag
+ *                                                                                          (e.g., using a PID loop)
+ *  ty          ty                          Elevation: Vertical angle (in degrees)      Lift/Pitch Control: Use for
+ *                                                  from the center of the camera view      positioning a lift or angling
+ *                                                  to the center of the target             the camera mount.
+ *  range       camtran[2] (tz)             Range/Distance: Distance (in meters) from   Translational Control: Use for
+ *                                                  the camera to the target along the      driving the robot forward/backward t0                                               camera's Z-axis
+ *                                                                                           reach a target distance
+ *                                                                                          (e.g., stopping exactly 0.5m from the backdrop)
  */
 @TeleOp(name = "Hello: Limelight3A", group = "Vision")
 //@Disabled
@@ -98,9 +106,7 @@ public class HelloLimelight extends LinearOpMode {
         // This process automatically calibrates and configures the sensor
         imu.initialize(parameters);
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
-
         telemetry.setMsTransmissionInterval(11);
-
         limelight.pipelineSwitch(0);
 
         /*
@@ -125,6 +131,7 @@ public class HelloLimelight extends LinearOpMode {
             if (result.isValid()) {
                 // Access general information
                 Pose3D botpose = result.getBotpose();
+                // botpose.getPosition().z;
                 double captureLatency = result.getCaptureLatency();
                 double targetingLatency = result.getTargetingLatency();
                 double parseLatency = result.getParseLatency();
@@ -136,7 +143,7 @@ public class HelloLimelight extends LinearOpMode {
                 telemetry.addData("txnc", result.getTxNC());
                 telemetry.addData("elevation, \u00B0", result.getTy());
                 telemetry.addData("tync", result.getTyNC());
-                telemetry.addData("elevation, \u00B0", result.getTa());
+                telemetry.addData("area, \u00B0", result.getTa());
 
                 telemetry.addData("Botpose", botpose.toString());
 
@@ -150,7 +157,13 @@ public class HelloLimelight extends LinearOpMode {
                         telemetry.addData("Botpose", botpose.toString());
                     }
                 }
-
+                double llMountAngle = 0.0; // degrees
+                double llLensHeight = 4.0; // inches
+                double goalHeightInches = 29.49; // inches
+                double angleToGoalDegrees = llMountAngle + result.getTy();
+                double angleToGoalRadians = angleToGoalDegrees * 0.01745329; // pi() / 180,0
+                double range = (goalHeightInches - llLensHeight) / Math.tan(angleToGoalRadians);
+                telemetry.addData("Range", range);
 
                 // Access detector results
                 List<LLResultTypes.DetectorResult> detectorResults = result.getDetectorResults();

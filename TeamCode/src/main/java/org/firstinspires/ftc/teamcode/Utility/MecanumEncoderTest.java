@@ -58,6 +58,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
  */
 @TeleOp(name="Mecanum Encoder Test", group="Test")
 public class MecanumEncoderTest extends OpMode {
+    private final String TAG = this.getClass().getSimpleName();
 
     // Motor Declarations
     private DcMotorEx motorLeftFront = null;
